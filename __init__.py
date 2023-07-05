@@ -54,6 +54,8 @@ class Stereonet:
         sname='Strike_RHR'
         ddname='Dip_Dir'
         dname='Dip'
+        aname='Azimuth'
+        pname='Plunge'
         strikes = list()
         dips = list()
  #       layers = self.iface.legendInterface().layers()
@@ -70,7 +72,9 @@ class Stereonet:
                 strikeExists = layer.fields().lookupField(sname)
                 ddrExists = layer.fields().lookupField(ddname)
                 dipExists = layer.fields().lookupField(dname)
-
+                azimuthExists = layer.fields().lookupField(aname)
+                plungeExists = layer.fields().lookupField(pname)
+                
                 for feature in iter:
                     if strikeExists != -1 and dipExists != -1:
                         strikes.append(feature[sname]+180)
@@ -79,6 +83,10 @@ class Stereonet:
                     elif ddrExists != -1 and dipExists != -1:
                         strikes.append(feature[ddname]+90)
                         dips.append(feature[dname])
+
+                    elif azimuthExists != -1 and plungeExists != -1:
+                        strikes.append(feature[aname]+90)
+                        dips.append(90-feature[pname])
 
             else:
                 continue
