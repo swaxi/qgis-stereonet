@@ -77,7 +77,7 @@ class Stereonet:
                 
                 for feature in iter:
                     if strikeExists != -1 and dipExists != -1:
-                        strikes.append(feature[sname]+180)
+                        strikes.append(feature[sname])
                         dips.append(feature[dname])
 
                     elif ddrExists != -1 and dipExists != -1:
