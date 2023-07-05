@@ -7,5 +7,5 @@
 ## Usage
  1- Download zip file from github, install into QGIS using plugin manager   
  2- Select a layer that has structural info (planes only for now), then select the points you want to plot   
- 3- Click on WAXI Stereonet icon   
+ 3- Click on WAXI Stereonet icon    ![plugin_icon](icon.png)  
  
