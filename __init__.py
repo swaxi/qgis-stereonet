@@ -87,7 +87,7 @@ class Stereonet:
             fig, ax = mplstereonet.subplots()
             ax.set_azimuth_ticks([0,30,60,90,120,150,180,210,240,270,300,330])
             ax.set_azimuth_ticklabels(['0\u00b0','30\u00b0','60\u00b0','90\u00b0','120\u00b0','150\u00b0','180\u00b0','210\u00b0','240\u00b0','270\u00b0','300\u00b0','330\u00b0'])
-            ax.grid(kind='polar')
+            ax.grid(kind='equal_area_stereonet')
             ax.density_contour(strikes, dips, measurement='poles',cmap=cm.coolwarm,method='exponential_kamb',sigma=1.5,linewidths =0.5)
             ax.pole(strikes, dips, 'k.', markersize=7)
             ax.set_title(layer.name()+" [# "+str(len(iter))+"]")
