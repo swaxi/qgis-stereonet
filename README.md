@@ -10,6 +10,6 @@
  3- Click on WAXI Stereonet icon    ![plugin_icon](icon.png)  
 
 ## Roadmap:
--	Plot poles and/or grand circles for planes (user choice?),   
+-	Plot poles and/or great circles for planes (user choice?),   
 -	Plot great circles and poles of planes on which lines lie when the information is available,   
--	Plot the hangingwall relative motion vector with an arrow on pole symbol if kinematic information is available.   
+-	Plot the hanging wall relative motion vector with an arrow on pole symbol if kinematic information is available.   
