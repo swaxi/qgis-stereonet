@@ -7,7 +7,7 @@
 ## Usage
  1- Download zip file from github, install into QGIS using plugin manager   
  2- Select a layer that has structural info, then select the points you want to plot   
- 3- You can use the WAXI QFIELD Plugin to control display behaviour   
+ 3- You can use the WAXI QFIELD Plugin (https://github.com/swaxi/WAXI_QF)to control display behaviour   
  4- Click on WAXI Stereonet icon    ![plugin_icon](icon.png)  
  
  ## Roadmap:
