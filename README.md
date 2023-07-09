@@ -2,7 +2,7 @@
  WAXI QFIELD Fork of steronet plugin
 
 # Source
- All the hard work was carried out by Daniel Childs: https://github.com/childsd3 and Joe Kington: https://github.com/joferkington/mplstereonet
+ All the hard work was carried out by Joe Kington: https://github.com/joferkington/mplstereonet and Daniel Childs: https://github.com/childsd3 
  
 ## Usage
  1- Download zip file from github, install into QGIS using plugin manager   
