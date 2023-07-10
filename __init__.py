@@ -156,7 +156,7 @@ class Stereonet:
 
         stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
-        stereoConfig={'showGtCircles':True,'showContours':True,'showKinematics':True}
+        stereoConfig={'showGtCircles':True,'showContours':True,'showKinematics':True,'linPlanes':True}
         
 
         if(os.path.exists(stereoConfigPath)):
@@ -227,7 +227,7 @@ class Stereonet:
                 ax.plane(strikes, dips, 'k',linewidth=1)
             else:
                 ax.pole(strikes, dips, 'k.', markersize=5)
-                if(srefExists != -1 and drefExists != -1 ):
+                if(srefExists != -1 and drefExists != -1 and stereoConfig['linPlanes']):
                     ax.plane(strikesref,dipsref,'k',linewidth=1)
                 if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
                     self.waxi_fault_and_striae_plot(ax, rakes_pstrikes, rakes_pdips,rakes_strikes, rakes_dips, rakes,kinematics)
