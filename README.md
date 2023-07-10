@@ -18,4 +18,4 @@ Download zip file from github, install into QGIS using plugin manager
    
 ## Roadmap:
 
--	Plot the hanging wall relative motion vector with an arrow on pole symbol if kinematic information is available.   
+-	Plot the hanging wall relative motion vector with an arrow on pole symbol if kinematic information is available.   Done: maybe?
