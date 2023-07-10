@@ -17,6 +17,5 @@ Download zip file from github, install into QGIS using plugin manager
 - Linear structures are displayed as poles, but if a planar feature is assocated with a linear feature, that planar feature will additionally be displayed as a great circle   
    
 ## Roadmap:
--	Plot poles and/or great circles for planes (user choice?):  Done using WAXI QFIELD Plugin for control 
--	Plot great circles and poles of planes on which lines lie when the information is available:   Done (I think?)
+
 -	Plot the hanging wall relative motion vector with an arrow on pole symbol if kinematic information is available.   
