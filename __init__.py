@@ -128,6 +128,7 @@ class Stereonet:
                 #arrows = ax.quiver(x1, y1, -u, v, width=1, headwidth=4, units='dots',color='k')
 
     def rose_diagram(self,strikes,title):
+        #modified from: http://geologyandpython.com/structural_geology.html
         
         bin_edges = np.arange(-5, 366, 10)
         number_of_strikes, bin_edges = np.histogram(strikes, bin_edges)
