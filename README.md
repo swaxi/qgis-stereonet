@@ -14,7 +14,7 @@ Download zip file from github, install into QGIS using plugin manager
  4- Click on WAXI Stereonet icon    ![plugin_icon](icon.png)  
     
 - Planar structures can be displayed as poles or great circles   
-- Linear structures are displayed as poles, but if a planar feature is assocated with a linear feature, that planar feature will additionally be displayed as a great circle   
+- Linear structures are displayed as poles or rose diagrams, but if a planar feature is assocated with a linear feature, that planar feature will optionally be displayed as a great circle in a stereoplot   
    
 ## Roadmap:
 

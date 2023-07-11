@@ -127,7 +127,35 @@ class Stereonet:
                 arrows = ax.quiver(x1, y1, u, -v, width=1, headwidth=4, units='dots',color='k')
                 #arrows = ax.quiver(x1, y1, -u, v, width=1, headwidth=4, units='dots',color='k')
 
+    def rose_diagram(self,strikes,title):
+        
+        bin_edges = np.arange(-5, 366, 10)
+        number_of_strikes, bin_edges = np.histogram(strikes, bin_edges)
+        number_of_strikes[0] += number_of_strikes[-1]
+        half = np.sum(np.split(number_of_strikes[:-1], 2), 0)
+        two_halves = np.concatenate([half, half])
+        fig = plt.figure(figsize=(8,8))
 
+        """ax = fig.add_subplot(121, projection='stereonet')
+
+        ax.pole(strikes, dips, c='k', label='Pole of the Planes')
+        ax.density_contourf(strikes, dips, measurement='poles', cmap='Reds')
+        ax.set_title('Density coutour of the Poles', y=1.10, fontsize=15)
+        ax.grid()"""
+
+        ax = fig.add_subplot(111, projection='polar')
+
+        ax.bar(np.deg2rad(np.arange(0, 360, 10)), two_halves, 
+            width=np.deg2rad(10), bottom=0.0, color='.8', edgecolor='k')
+        ax.set_theta_zero_location('N')
+        ax.set_theta_direction(-1)
+        ax.set_thetagrids(np.arange(0, 360, 10), labels=np.arange(0, 360, 10))
+        ax.set_rgrids(np.arange(1, two_halves.max() + 1, 2), angle=0, weight= 'black')
+        ax.set_title(title)
+
+        fig.tight_layout()
+        plt.show()
+        
     def contourPlot(self):
         sname='Strike_RHR'
         ddname='Dip_Dir'
@@ -150,6 +178,7 @@ class Stereonet:
         rakes_dips=list()
         rakes_pstrikes=list()
         rakes_pdips=list()
+        roseAzimuth = list()
         project = QgsProject.instance()
         proj_file_path=project.fileName()
         head_tail = os.path.split(proj_file_path)
@@ -206,6 +235,10 @@ class Stereonet:
                             rakes_pstrikes.append(feature[aname]+90)
                             rakes_pdips.append(90-feature[pname])
 
+                    if azimuthExists != -1 and stereoConfig['roseDiagram']:
+                        roseAzimuth.append(feature[aname])
+ 
+
 
             else:
                 continue
@@ -215,8 +248,9 @@ class Stereonet:
         dips = [i for i in dips if i != None]
         plunges = [i for i in plunges if i != None]
         #print(strikes)
-
-        if (len(strikes) != 0):
+        if(len(roseAzimuth) != 0 and stereoConfig['roseDiagram']):
+            self.rose_diagram(roseAzimuth,layer.name()+" [# "+str(len(iter))+"]")
+        elif (len(strikes) != 0):
             fig, ax = mplstereonet.subplots()
             ax.set_azimuth_ticks([0,30,60,90,120,150,180,210,240,270,300,330])
             ax.set_azimuth_ticklabels(['0\u00b0','30\u00b0','60\u00b0','90\u00b0','120\u00b0','150\u00b0','180\u00b0','210\u00b0','240\u00b0','270\u00b0','300\u00b0','330\u00b0'])
