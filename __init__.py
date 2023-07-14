@@ -33,7 +33,7 @@ from qgis.core import *
 from qgis.gui import *
 import os
 from qgis.core import QgsProject
-from math import asin,sin,degrees,radians,cos
+from math import asin,sin,degrees,radians,cos,tan,atan
 import json
 
 def classFactory(iface):
@@ -52,84 +52,82 @@ class Stereonet:
     def unload(self):
         self.iface.removeToolBarIcon(self.contourAction)
         del self.contourAction
-
-    def plungedip2rake(self,plunge,dip,kinematics):
-        if(plunge==dip):
-            rake=0
-        elif(dip==90.0):
-            rake=90-plunge
-        else:
-            rake=90-degrees(asin(sin(radians(plunge))/sin(radians(dip))))
-        
-        return(rake)
-
-    def waxi_fault_and_striae_plot(self,ax, pstrikes,pdips,strikes, dips, rakes,kinematics):
-        sos=['Sinistral-slip','Dextral-Slip','Normal-slip','Reverse-slip']
-        """Makes a fault-and-striae plot (a.k.a. "Ball of String") for normal faults
-        with the given strikes, dips, and rakes."""
-        # Plot the planes
-        #print(kinematics)
-        #print(strikes)
-        #print(dips)
-        #print(rakes)
-
-        # loop through each kinematic sense to plot correct orientations of arrows
-        for sos_it in sos:
-            s=list()
-            d=list()
-            r=list()            
+    
+    def waxi_tangent_lineation_plot(self,ax,strikes, dips,kinematics,rhr,azs):
+        """Makes a tangent lineation plot for normal faults with the given strikes,
+        dips, and rakes."""
+        sos=['Sinistral-slip','Dextral-slip','Normal-slip','Reverse-slip']
+        print(kinematics)
+        for j,sos_it in enumerate(sos):
+            print("processing",sos_it)
             dp=list()
             sp=list()
+            rh=list()
+            az=list()
             for i in range(len(strikes)):
                 if(kinematics[i]==sos_it):
-                    s.append(pstrikes[i])
-                    d.append(pdips[i])
-                    r.append(rakes[i])
+                    print('inputs',azs[i],rhr[i])
                     dp.append(dips[i])
                     sp.append(strikes[i])
-                    #print(i,strikes[i],dips[i],rakes[i])
-            # Calculate the position of the rake of the lineations, but don't plot yet
-            x,y = mplstereonet.rake(s, d,r)
-            x1,y1 = mplstereonet.pole(sp, dp)
+                    rh.append(rhr[i])
+                    if(sos_it in ['Normal-slip','Reverse-slip']):
+                        if(azs[i]>90):
+                            azimuth=180-azs[i]
+                        else:
+                            azimuth=azs[i]
+                        if(rhr[i]=='YES'):
+                            az.append(360-azimuth)
+                        else:
+                            az.append(180-azimuth)
+                    else:
+                        if(azs[i]>180 ):
+                            azimuth=90-azs[i]
+                        else:
+                            azimuth=azs[i]
+                        if(rhr[i]=='YES'):
+                            azimuth=180-azimuth
+                        else:
+                            azimuth=360-azimuth
+                        if(rhr[i]=='YES' and azs[i]>90):
+                            azimuth=azs[i]
+                        az.append(azimuth)                        
+                    print(sos_it,rhr[i],azimuth)
 
+            # Calculate the position of the rake of the lineations, but don't plot yet
+            rake_x, rake_y = mplstereonet.rake(sp, dp, az)
+            
             # Calculate the direction the arrows should point
             # These are all normal faults, so the arrows point away from the center
-            # For thrusts, it would just be u, v = -x/mag, -y/mag
-            mag = np.hypot(x, y)
+            # Because we're plotting at the pole location, however, we need to flip this
+            # from what we plotted with the "ball of string" plot.
+            mag = np.hypot(rake_x, rake_y)
+            u, v = -rake_x / mag, -rake_y / mag
 
-            theta = np.deg2rad(0)
+            # Calculate the position of the poles
+            pole_x, pole_y = mplstereonet.pole(sp, dp)
+           
+            # Plot the arrows centered on the pole locations...
+            if(sos_it=='Sinistral-slip'):
+                arrows = ax.quiver(pole_x, pole_y, u, v,  width=1, headwidth=4, units='dots', color='r',
+                                pivot='tail')
+            elif(sos_it=='Dextral-slip'):
+                arrows = ax.quiver(pole_x, pole_y, -u, -v,  width=1, headwidth=4, units='dots', color='g',
+                                pivot='tail')
+            elif(sos_it=='Normal-slip'):
+                arrows = ax.quiver(pole_x, pole_y, u,-v,  width=1, headwidth=4, units='dots', color='b',
+                                pivot='tail')
+            elif(sos_it=='Reverse-slip'):
+                arrows = ax.quiver(pole_x, pole_y, -u,v,  width=1, headwidth=4, units='dots', color='m',
+                                pivot='tail')
 
-            rot = np.array([[cos(theta), -sin(theta)], [sin(theta), cos(theta)]])
 
-            v1 = np.array([x, y])
+            #return arrows
+    
 
-            v2 = np.matmul(rot, v1)
-            u, v = v2[0] / mag, v2[1] / mag
-
-            # Plot the arrows at the rake locations...
-            #print(sos_it,s,d,r)
-            if(sos_it == sos[0] and len(x)>0):
-                #print("rot")
-                #print(v)
-                #print(v2)
-
-                arrows = ax.quiver(x1, y1, v, u, width=1, headwidth=4, units='dots',color='r')
-                #arrows = ax.quiver(x1, y1, -v, -u, width=1, headwidth=4, units='dots',color='b')
-                #arrows = ax.quiver(x1, y1, u, -v, width=1, headwidth=4, units='dots',color='g')
-                #arrows = ax.quiver(x1, y1, -u, v, width=1, headwidth=4, units='dots',color='k')
-            elif(sos_it == sos[1]and len(x)>0):
-                arrows = ax.quiver(x1, y1, -v, -u, width=1, headwidth=4, units='dots',color='g')
-            elif(sos_it == sos[2]and len(x)>0):
-                arrows = ax.quiver(x1, y1, -u, v, width=1, headwidth=4, units='dots',color='b')
-            elif(sos_it == sos[3]and len(x)>0):
-                #arrows = ax.quiver(x1, y1, v, u, width=1, headwidth=4, units='dots',color='r')
-                #arrows = ax.quiver(x1, y1, -v, -u, width=1, headwidth=4, units='dots',color='b')
-                arrows = ax.quiver(x1, y1, u, -v, width=1, headwidth=4, units='dots',color='k')
-                #arrows = ax.quiver(x1, y1, -u, v, width=1, headwidth=4, units='dots',color='k')
 
     def rose_diagram(self,strikes,title):
         #modified from: http://geologyandpython.com/structural_geology.html
-        
+
         bin_edges = np.arange(-5, 366, 10)
         number_of_strikes, bin_edges = np.histogram(strikes, bin_edges)
         number_of_strikes[0] += number_of_strikes[-1]
@@ -167,6 +165,7 @@ class Stereonet:
         drefname='Dip_ref'
         kname='Kinematics'
         pname='Plunge'
+        prhrname='Pitch_RHR'
 
         strikes = list()
         dips = list()
@@ -174,12 +173,15 @@ class Stereonet:
         dipsref = list()
         plunges=list()
         kinematics=list()
-        rakes=list()
         rakes_strikes=list()
         rakes_dips=list()
         rakes_pstrikes=list()
         rakes_pdips=list()
         roseAzimuth = list()
+        rhr=list()
+        azs=list()
+
+
         project = QgsProject.instance()
         proj_file_path=project.fileName()
         head_tail = os.path.split(proj_file_path)
@@ -229,12 +231,11 @@ class Stereonet:
                     
                     if plungeExists != -1 and drefExists != -1:
                         if(feature[pname]  and  feature[drefname]  and  feature[kname] ):
-                            rakes.append(self.plungedip2rake(feature[pname],feature[drefname],feature[kname]))
                             rakes_strikes.append(feature[srefname])
                             rakes_dips.append(feature[drefname])
                             kinematics.append(feature[kname])
-                            rakes_pstrikes.append(feature[aname]+90)
-                            rakes_pdips.append(90-feature[pname])
+                            rhr.append(feature[prhrname])
+                            azs.append(feature[aname])
 
                     if azimuthExists != -1 and stereoConfig['roseDiagram']:
                         roseAzimuth.append(feature[aname])
@@ -265,7 +266,7 @@ class Stereonet:
                 if(srefExists != -1 and drefExists != -1 and stereoConfig['linPlanes']):
                     ax.plane(strikesref,dipsref,'k',linewidth=1)
                 if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
-                    self.waxi_fault_and_striae_plot(ax, rakes_pstrikes, rakes_pdips,rakes_strikes, rakes_dips, rakes,kinematics)
+                    self.waxi_tangent_lineation_plot(ax,rakes_strikes, rakes_dips,kinematics,rhr,azs)
 
             ax.set_title(layer.name()+" [# "+str(len(iter))+"]")
             plt.show()
