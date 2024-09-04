@@ -57,16 +57,16 @@ class Stereonet:
         """Makes a tangent lineation plot for normal faults with the given strikes,
         dips, and rakes."""
         sos=['Sinistral-slip','Dextral-slip','Normal-slip','Reverse-slip']
-        print(kinematics)
+
         for j,sos_it in enumerate(sos):
-            print("processing",sos_it)
+
             dp=list()
             sp=list()
             rh=list()
             az=list()
             for i in range(len(strikes)):
                 if(kinematics[i]==sos_it):
-                    print('inputs',azs[i],rhr[i])
+
                     dp.append(dips[i])
                     sp.append(strikes[i])
                     rh.append(rhr[i])
@@ -91,7 +91,7 @@ class Stereonet:
                         if(rhr[i]=='YES' and azs[i]>90):
                             azimuth=azs[i]
                         az.append(azimuth)                        
-                    print(sos_it,rhr[i],azimuth)
+
 
             # Calculate the position of the rake of the lineations, but don't plot yet
             rake_x, rake_y = mplstereonet.rake(sp, dp, az)
@@ -185,8 +185,10 @@ class Stereonet:
         project = QgsProject.instance()
         proj_file_path=project.fileName()
         head_tail = os.path.split(proj_file_path)
+        WAXI_project_path = os.path.abspath(QgsProject.instance().fileName())
+        stereoConfigPath = os.path.join(os.path.dirname(WAXI_project_path), "99. COMMAND FILES - PLUGIN/stereonet.json")
 
-        stereoConfigPath = head_tail[0]+"/99. COMMAND FILES - PLUGIN/stereonet.json"
+        #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
         stereoConfig={'showGtCircles':True,'showContours':True,'showKinematics':True,'linPlanes':True}
         
@@ -202,6 +204,7 @@ class Stereonet:
 
         for layer in layers:
             if layer.type() == QgsMapLayer.VectorLayer:
+
                 iter = layer.selectedFeatures()
                 strikeExists = layer.fields().lookupField(sname)
                 ddrExists = layer.fields().lookupField(ddname)
@@ -212,12 +215,13 @@ class Stereonet:
                 drefExists = layer.fields().lookupField(drefname)
 
                 for feature in iter:
-                    if strikeExists != -1 and dipExists != -1:
-                        strikes.append(feature[sname])
-                        dips.append(feature[dname])
                   
-                    elif ddrExists != -1 and dipExists != -1:
+                    if ddrExists != -1 and dipExists != -1:
                         strikes.append(feature[ddname]+90)
+                        dips.append(feature[dname])
+
+                    elif strikeExists != -1 and dipExists != -1:
+                        strikes.append(feature[sname])
                         dips.append(feature[dname])
 
                     elif azimuthExists != -1 and plungeExists != -1:
@@ -244,12 +248,13 @@ class Stereonet:
 
             else:
                 continue
+
         strikesref = [i for i in strikesref if i != None]
         dipsref = [i for i in dipsref if i != None]
         strikes = [i for i in strikes if i != None]
         dips = [i for i in dips if i != None]
         plunges = [i for i in plunges if i != None]
-        #print(strikes)
+
         if(len(roseAzimuth) != 0 and stereoConfig['roseDiagram']):
             self.rose_diagram(roseAzimuth,layer.name()+" [# "+str(len(iter))+"]")
         elif (len(strikes) != 0):
