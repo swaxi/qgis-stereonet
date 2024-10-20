@@ -273,7 +273,8 @@ class Stereonet:
                 if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
                     self.waxi_tangent_lineation_plot(ax,rakes_strikes, rakes_dips,kinematics,rhr,azs)
 
-            ax.set_title(layer.name()+" [# "+str(len(iter))+"]")
+            ax.set_title(layer.name()+" [# "+str(len(iter))+"]",pad=24)
             plt.show()
+
         else:
             self.iface.messageBar().pushMessage("No data selected, or no structural data found: first select a layer with structural info, then select the points that you wish to plot", level=Qgis.Warning, duration=5)
