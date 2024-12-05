@@ -186,7 +186,7 @@ class Stereonet:
         proj_file_path=project.fileName()
         head_tail = os.path.split(proj_file_path)
         WAXI_project_path = os.path.abspath(QgsProject.instance().fileName())
-        stereoConfigPath = os.path.join(os.path.dirname(WAXI_project_path), "99. COMMAND FILES - PLUGIN/stereonet.json")
+        stereoConfigPath = os.path.join(os.path.dirname(WAXI_project_path), "99_COMMAND_FILES_PLUGIN/stereonet.json")
 
         #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
