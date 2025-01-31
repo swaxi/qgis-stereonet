@@ -138,8 +138,10 @@ class StereonetAxes(LambertAxes):
     rotation = property(get_rotation, set_rotation)
 
     def cla(self):
-        """Identical to Axes.cla (This docstring is overwritten)."""
-        Axes.cla(self)
+        if not hasattr(self, "_already_clearing"):
+            self._already_clearing = True
+            super().cla()
+            self._already_clearing = False
 
         # Set grid defaults...
         self.set_longitude_grid(10)
