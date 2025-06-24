@@ -145,7 +145,7 @@ class Stereonet:
         ax = fig.add_subplot(111, projection='polar')
 
         ax.bar(np.deg2rad(np.arange(0, 360, 10)), two_halves, 
-            width=np.deg2rad(10), bottom=0.0, color='.8', edgecolor='k')
+            width=np.deg2rad(10),  color='.8', edgecolor='k')
         ax.set_theta_zero_location('N')
         ax.set_theta_direction(-1)
         ax.set_thetagrids(np.arange(0, 360, 10), labels=np.arange(0, 360, 10))
