@@ -22,9 +22,9 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
-from PyQt5.QtWidgets import *
+from qgis.PyQt.QtGui import *
+from qgis.PyQt.QtCore import *
+from qgis.PyQt.QtWidgets import *
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
