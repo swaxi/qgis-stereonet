@@ -18,7 +18,7 @@ Download zip file from github, install into QGIS using plugin manager
 
 ## Field Names
 
-The following field names are currently recognised, you can go in the file __init.py__ from around line 159 and add your own if you like:
+The following field names are currently recognised, you can go in the file _ _init.py__ from around line 159 and add your own if you like:
 
 - Strike field names = ['Strike_RHR', 'Strike', 'strike']
 - Dip Direction field names = ['Dip_Direction', 'Dip_Dir', 'DipDirection', 'dip_direction']
