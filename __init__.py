@@ -164,8 +164,7 @@ class Stereonet:
         srefnames= ['Strike_ref', 'Strike_Ref', 'strike_ref']
         drefnames= ['Dip_ref', 'Dip_Ref', 'dip_ref']
         knames= ['Kinematics', 'kinematics']
-        pnames= ['Plunge', 'plunge']
-        prhrnames= ['Pitch_RHR', 'Pitch_rhr', 'Pitch_Rhr', 'pitch_rhr', 'RHR_pitch', 'rhr_pitch']
+        prhrnames= ['Pitch_RHR', 'Pitch_rhr', 'Pitch_Rhr', 'Pitch', 'pitch_rhr', 'RHR_pitch', 'rhr_pitch', 'pitch']
         
         strikes = list()
         dips = list()
