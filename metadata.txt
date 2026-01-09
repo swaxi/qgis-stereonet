@@ -1,8 +1,10 @@
 [general]
 name=Stereonet
 qgisMinimumVersion=3.0.0
+qgisMaximumVersion=4.99
 description=Displays a geologic stereonet of selected data
 version=0.3
+supportsQt6=True
 author=Daniel Childs
 email=daniel@childsgeo.com
 
