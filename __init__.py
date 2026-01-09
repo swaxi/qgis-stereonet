@@ -157,16 +157,16 @@ class Stereonet:
         
     def contourPlot(self):
         snames=['Strike_RHR', 'Strike', 'strike']
-        ddname='Dip_Dir' 
-        dname='Dip'
-        aname='Azimuth'
-        pname='Plunge'
-        srefname='Strike_ref'
-        drefname='Dip_ref'
-        kname='Kinematics'
-        pname='Plunge'
-        prhrname='Pitch_RHR'
-
+        ddnames=['Dip_Direction', 'Dip_Dir', 'DipDirection', 'dip_direction']
+        dnames= ['Dip', 'dip']
+        anames= ['Azimuth', 'azimuth', 'Bearing', 'bearing']
+        pnames= ['Plunge', 'plunge']
+        srefnames= ['Strike_ref', 'Strike_Ref', 'strike_ref']
+        drefnames= ['Dip_ref', 'Dip_Ref', 'dip_ref']
+        knames= ['Kinematics', 'kinematics']
+        pnames= ['Plunge', 'plunge']
+        prhrnames= ['Pitch_RHR', 'Pitch_rhr', 'Pitch_Rhr', 'pitch_rhr', 'RHR_pitch', 'rhr_pitch']
+        
         strikes = list()
         dips = list()
         strikesref = list()
@@ -206,22 +206,24 @@ class Stereonet:
             if layer.type() == QgsMapLayer.VectorLayer:
 
                 iter = layer.selectedFeatures()
-                for sn in snames:
-                    strikeExists = layer.fields().lookupField(sn)
-                    if strikeExists != -1:
-                        sname=sn
-                        break
-                ddrExists = layer.fields().lookupField(ddname)
-                dipExists = layer.fields().lookupField(dname)
-                azimuthExists = layer.fields().lookupField(aname)
-                plungeExists = layer.fields().lookupField(pname)
-                srefExists = layer.fields().lookupField(srefname)
-                drefExists = layer.fields().lookupField(drefname)
+                strikeExists, sname = self.fieldExists(layer,snames)
+                ddrExists, ddname = self.fieldExists(layer,ddnames)
+                dipExists, dname = self.fieldExists(layer,dnames)
+                azimuthExists, aname = self.fieldExists(layer,anames)
+                plungeExists, pname = self.fieldExists(layer,pnames)
+                srefExists, srefname = self.fieldExists(layer,srefnames)
+                drefExists, drefname = self.fieldExists(layer,drefnames)
+                kinematicsExists, kname = self.fieldExists(layer,knames)
+                prhrExists, prhrname = self.fieldExists(layer,prhrnames )
+
+
+
 
                 for feature in iter:
                   
                     if ddrExists != -1 and dipExists != -1:
-                        strikes.append(feature[ddname]+90)
+                        print(dname,ddname)
+                        strikes.append(int(feature[ddname])+90)
                         dips.append(feature[dname])
 
                     elif strikeExists != -1 and dipExists != -1:
@@ -229,8 +231,8 @@ class Stereonet:
                         dips.append(feature[dname])
 
                     elif azimuthExists != -1 and plungeExists != -1:
-                        strikes.append(feature[aname]+90)
-                        dips.append(90-feature[pname])
+                        strikes.append(int(feature[aname])+90)
+                        dips.append(90-int(feature[pname]))
 
                     if srefExists != -1 and drefExists != -1:
                         if(not feature[srefname] is None and not feature[drefname] is None):
@@ -282,3 +284,12 @@ class Stereonet:
 
         else:
             self.iface.messageBar().pushMessage("No data selected, or no structural data found: first select a layer with structural info, then select the points that you wish to plot", level=Qgis.Warning, duration=5)
+        
+    def fieldExists(self,layer,fieldnames):
+        
+        for fieldname in fieldnames:
+            fieldExists = layer.fields().lookupField(fieldname)
+            if fieldExists != -1:
+                return True,fieldname
+        
+        return -1,False
