@@ -156,8 +156,7 @@ class Stereonet:
         plt.show()
         
     def contourPlot(self):
-        sname='Strike_RHR' 
-        sname2='Strike'
+        snames=['Strike_RHR', 'Strike', 'strike']
         ddname='Dip_Dir' 
         dname='Dip'
         aname='Azimuth'
@@ -207,11 +206,11 @@ class Stereonet:
             if layer.type() == QgsMapLayer.VectorLayer:
 
                 iter = layer.selectedFeatures()
-                strikeExists = layer.fields().lookupField(sname)
-                if strikeExists == -1:
-                    strikeExists = layer.fields().lookupField(sname2)
-                    if strikeExists:
-                        sname=sname2
+                for sn in snames:
+                    strikeExists = layer.fields().lookupField(sn)
+                    if strikeExists != -1:
+                        sname=sn
+                        break
                 ddrExists = layer.fields().lookupField(ddname)
                 dipExists = layer.fields().lookupField(dname)
                 azimuthExists = layer.fields().lookupField(aname)
