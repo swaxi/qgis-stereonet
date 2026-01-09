@@ -22,9 +22,9 @@
  This script initializes the plugin, making it known to QGIS.
 """
 
-from PyQt5.QtGui import *
-from PyQt5.QtCore import *
-from PyQt5.QtWidgets import *
+from qgis.PyQt.QtGui import *
+from qgis.PyQt.QtCore import *
+from qgis.PyQt.QtWidgets import *
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
@@ -156,8 +156,9 @@ class Stereonet:
         plt.show()
         
     def contourPlot(self):
-        sname='Strike_RHR'
-        ddname='Dip_Dir'
+        sname='Strike_RHR' 
+        sname2='Strike'
+        ddname='Dip_Dir' 
         dname='Dip'
         aname='Azimuth'
         pname='Plunge'
@@ -190,7 +191,7 @@ class Stereonet:
 
         #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
-        stereoConfig={'showGtCircles':True,'showContours':True,'showKinematics':True,'linPlanes':True}
+        stereoConfig={'showGtCircles':False,'showContours':True,'showKinematics':True,'linPlanes':True,'roseDiagram':False}
         
 
         if(os.path.exists(stereoConfigPath)):
@@ -207,6 +208,10 @@ class Stereonet:
 
                 iter = layer.selectedFeatures()
                 strikeExists = layer.fields().lookupField(sname)
+                if strikeExists == -1:
+                    strikeExists = layer.fields().lookupField(sname2)
+                    if strikeExists:
+                        sname=sname2
                 ddrExists = layer.fields().lookupField(ddname)
                 dipExists = layer.fields().lookupField(dname)
                 azimuthExists = layer.fields().lookupField(aname)
