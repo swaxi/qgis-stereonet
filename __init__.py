@@ -28,6 +28,9 @@ from qgis.PyQt.QtWidgets import *
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
+from matplotlib.widgets import LassoSelector
+from matplotlib.path import Path
+from collections import defaultdict
 from .mplstereonet import *
 from qgis.core import *
 from qgis.gui import *
@@ -168,6 +171,7 @@ class Stereonet:
         
         strikes = list()
         dips = list()
+        feature_ids = list()
         strikesref = list()
         dipsref = list()
         plunges=list()
@@ -224,14 +228,17 @@ class Stereonet:
                         print(dname,ddname)
                         strikes.append(int(feature[ddname])+90)
                         dips.append(feature[dname])
+                        feature_ids.append((layer, feature.id()))
 
                     elif strikeExists != -1 and dipExists != -1:
                         strikes.append(feature[sname])
                         dips.append(feature[dname])
+                        feature_ids.append((layer, feature.id()))
 
                     elif azimuthExists != -1 and plungeExists != -1:
                         strikes.append(int(feature[aname])+90)
                         dips.append(90-int(feature[pname]))
+                        feature_ids.append((layer, feature.id()))
 
                     if srefExists != -1 and drefExists != -1:
                         if(not feature[srefname] is None and not feature[drefname] is None):
@@ -254,11 +261,14 @@ class Stereonet:
             else:
                 continue
 
-        strikesref = [i for i in strikesref if i != None]
-        dipsref = [i for i in dipsref if i != None]
-        strikes = [i for i in strikes if i != None]
-        dips = [i for i in dips if i != None]
-        plunges = [i for i in plunges if i != None]
+        strikesref = [i for i in strikesref if i is not None]
+        dipsref = [i for i in dipsref if i is not None]
+        plunges = [i for i in plunges if i is not None]
+        valid = [(s, d, fid) for s, d, fid in zip(strikes, dips, feature_ids)
+                 if s is not None and d is not None]
+        strikes = [v[0] for v in valid]
+        dips = [v[1] for v in valid]
+        feature_ids = [v[2] for v in valid]
 
         if(len(roseAzimuth) != 0 and stereoConfig['roseDiagram']):
             self.rose_diagram(roseAzimuth,layer.name()+" [# "+str(len(iter))+"]")
@@ -272,11 +282,69 @@ class Stereonet:
             if(stereoConfig['showGtCircles'] and strikeExists != -1):
                 ax.plane(strikes, dips, 'k',linewidth=1)
             else:
-                ax.pole(strikes, dips, 'k.', markersize=5)
+                pole_lines = ax.pole(strikes, dips, 'k.', markersize=5)
                 if(srefExists != -1 and drefExists != -1 and stereoConfig['linPlanes']):
                     ax.plane(strikesref,dipsref,'k',linewidth=1)
                 if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
                     self.waxi_tangent_lineation_plot(ax,rakes_strikes, rakes_dips,kinematics,rhr,azs)
+
+                # --- Interactive selection ---
+                if feature_ids and pole_lines:
+                    lon_data = np.array(pole_lines[0].get_xdata())
+                    lat_data = np.array(pole_lines[0].get_ydata())
+                    valid_pts = ~(np.isnan(lon_data) | np.isnan(lat_data))
+                    pts = np.column_stack([lon_data[valid_pts], lat_data[valid_pts]])
+                    sel_fids = [feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
+
+                    sel_plot, = ax.plot([], [], 'ro', markersize=10, zorder=5,
+                                       fillstyle='none', markeredgewidth=2)
+
+                    def _update_selection(indices):
+                        if indices:
+                            sel_plot.set_data(pts[indices, 0], pts[indices, 1])
+                        else:
+                            sel_plot.set_data([], [])
+                        fig.canvas.draw_idle()
+                        layer_sel = defaultdict(list)
+                        for i in indices:
+                            lyr, fid = sel_fids[i]
+                            layer_sel[id(lyr)].append(fid)
+                        all_layers = {id(lyr): lyr for lyr, _ in sel_fids}
+                        for lid, lyr in all_layers.items():
+                            lyr.selectByIds(layer_sel[lid]) if lid in layer_sel else lyr.removeSelection()
+
+                    def _on_lasso(verts):
+                        mask = Path(verts).contains_points(pts)
+                        _update_selection(np.where(mask)[0].tolist())
+
+                    _press_xy = [None]
+
+                    def _on_press(event):
+                        if event.inaxes == ax and event.button == 1:
+                            _press_xy[0] = (event.x, event.y)
+
+                    def _on_release(event):
+                        if event.button != 1 or _press_xy[0] is None or event.xdata is None:
+                            _press_xy[0] = None
+                            return
+                        moved = (abs(event.x - _press_xy[0][0]) > 5 or
+                                 abs(event.y - _press_xy[0][1]) > 5)
+                        _press_xy[0] = None
+                        if moved or event.inaxes != ax:
+                            return
+                        dists = np.hypot(pts[:, 0] - event.xdata, pts[:, 1] - event.ydata)
+                        min_i = int(np.argmin(dists))
+                        if dists[min_i] < 0.1:
+                            _update_selection([min_i])
+
+                    def _on_key(event):
+                        if event.key == 'escape':
+                            _update_selection([])
+
+                    self._stereonet_lasso = LassoSelector(ax, _on_lasso)
+                    fig.canvas.mpl_connect('button_press_event', _on_press)
+                    fig.canvas.mpl_connect('button_release_event', _on_release)
+                    fig.canvas.mpl_connect('key_press_event', _on_key)
 
             ax.set_title(layer.name()+" [# "+str(len(iter))+"]",pad=24)
             plt.show()

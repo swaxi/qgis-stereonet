@@ -3,7 +3,7 @@ name=Stereonet
 qgisMinimumVersion=3.0.0
 qgisMaximumVersion=4.99
 description=Displays a geologic stereonet of selected data
-version=0.3.01
+version=0.3.02
 author=Daniel Childs
 email=daniel@childsgeo.com
 
@@ -13,11 +13,13 @@ tracker=https://gitlab.com/dchilds/qgis-stereonet/issues
 repository=https://gitlab.com/dchilds/qgis-stereonet
 # End of mandatory metadata
 
+
 # Recommended items:
 
 # Uncomment the following line and add your changelog:
 changelog=Added support for QGIS 3. Changed contouring to schmidt contouring.
-#changelog=Added support for having either strikes or dip directions of the geologic structures
+#changelog=0.3.02 Added suport to select from steronet and update map selections
+    0.3.01 Added support for having either strikes or dip directions of the geologic structures
 
 # Tags are comma separated with spaces allowed
 tags=attribute, csv, geology, stereonet, structure
