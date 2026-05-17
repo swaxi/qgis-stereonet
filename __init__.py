@@ -270,7 +270,7 @@ class Stereonet:
             if os.path.exists(candidate):
                 config_path = candidate
         dlg = StereonetSettingsDialog(self.iface.mainWindow(), config_path=config_path)
-        dlg.exec_()
+        dlg.exec()
     
     def waxi_tangent_lineation_plot(self,ax,strikes, dips,kinematics,rhr,azs):
         """Makes a tangent lineation plot for normal faults with the given strikes,
