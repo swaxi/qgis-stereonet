@@ -28,6 +28,7 @@ Click and drag to draw a freehand polygon around any number of poles.
 - Release the mouse button to complete the selection
 - All poles inside the lasso are highlighted with red open circles
 - The corresponding features are immediately selected in the QGIS map layer
+- Shift select adds points to the selection   
 
 #### Single-Point Selection
 Click near any individual pole to select it.

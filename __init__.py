@@ -28,7 +28,6 @@ from qgis.PyQt.QtWidgets import *
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
-from matplotlib.widgets import LassoSelector
 from matplotlib.path import Path
 from collections import defaultdict
 from .mplstereonet import *
@@ -38,6 +37,112 @@ import os
 from qgis.core import QgsProject
 from math import asin,sin,degrees,radians,cos,tan,atan
 import json
+
+class _BoundedLassoSelector:
+    """Lasso selector that works entirely in axes coordinates (0-1 space).
+
+    This avoids the numerically unstable inverse Lambert projection transform.
+    The stereonet boundary is always the circle centred at (0.5, 0.5) with
+    radius 0.5 in axes coordinates.  When the cursor leaves that circle the
+    path is clipped to the boundary; arc vertices are interpolated so the line
+    visually hugs the edge.  The onselect callback receives a list of
+    (ax_x, ax_y) vertices in axes coordinates.
+    """
+
+    _R = 0.5  # stereonet radius in axes coords
+
+    def __init__(self, ax, onselect):
+        self.ax = ax
+        self.onselect = onselect
+        self._active = False
+        self._verts = []          # list of (ax_x, ax_y)
+        self._last_clipped = False
+        self._last_angle = 0.0
+        # Line drawn in axes-coordinate space so no data transform is needed
+        self._line, = ax.plot([], [], color='black', linewidth=0.8,
+                              transform=ax.transAxes)
+        self._line.set_visible(False)
+        canvas = ax.figure.canvas
+        self._cids = [
+            canvas.mpl_connect('button_press_event', self._on_press),
+            canvas.mpl_connect('button_release_event', self._on_release),
+            canvas.mpl_connect('motion_notify_event', self._on_move),
+        ]
+
+    def _disp_to_axes(self, x, y):
+        """Convert a single display-coord point to axes coords."""
+        return self.ax.transAxes.inverted().transform([[x, y]])[0]
+
+    def _clip(self, x, y):
+        """Convert display coords to axes coords, clipped to the stereonet circle.
+        Returns (ax_x, ax_y, is_clipped, angle_from_centre)."""
+        ax_x, ax_y = self._disp_to_axes(x, y)
+        dx, dy = ax_x - 0.5, ax_y - 0.5
+        angle = np.arctan2(dy, dx)
+        if np.hypot(dx, dy) <= self._R:
+            return ax_x, ax_y, False, angle
+        return (0.5 + self._R * np.cos(angle),
+                0.5 + self._R * np.sin(angle),
+                True, angle)
+
+    def _arc_verts(self, from_angle, to_angle):
+        """Axes-coord vertices on the boundary arc, start-exclusive, end-inclusive."""
+        diff = (to_angle - from_angle + np.pi) % (2 * np.pi) - np.pi
+        n = max(2, int(abs(diff) * 20))
+        angles = np.linspace(from_angle, from_angle + diff, n + 1)[1:]
+        return [(0.5 + self._R * np.cos(a), 0.5 + self._R * np.sin(a))
+                for a in angles]
+
+    def _update_line(self):
+        if self._verts:
+            xs, ys = zip(*self._verts)
+        else:
+            xs, ys = [], []
+        self._line.set_data(xs, ys)
+
+    def _on_press(self, event):
+        if event.button != 1:
+            return
+        bbox = self.ax.get_window_extent()
+        if not (bbox.x0 <= event.x <= bbox.x1 and bbox.y0 <= event.y <= bbox.y1):
+            return
+        self._active = True
+        self._verts = []
+        ax_x, ax_y, clipped, angle = self._clip(event.x, event.y)
+        self._verts.append((ax_x, ax_y))
+        self._last_clipped = clipped
+        self._last_angle = angle
+        self._line.set_visible(True)
+        self._update_line()
+        self.ax.figure.canvas.draw_idle()
+
+    def _on_move(self, event):
+        if not self._active:
+            return
+        ax_x, ax_y, clipped, angle = self._clip(event.x, event.y)
+        if self._last_clipped and clipped:
+            self._verts.extend(self._arc_verts(self._last_angle, angle))
+            self._last_angle = angle
+        else:
+            self._verts.append((ax_x, ax_y))
+            self._last_clipped = clipped
+            if clipped:
+                self._last_angle = angle
+        self._update_line()
+        self.ax.figure.canvas.draw_idle()
+
+    def _on_release(self, event):
+        if not self._active or event.button != 1:
+            return
+        self._active = False
+        self._line.set_visible(False)
+        self.ax.figure.canvas.draw_idle()
+        self.onselect(self._verts)
+
+    def disconnect(self):
+        for cid in self._cids:
+            self.ax.figure.canvas.mpl_disconnect(cid)
+
 
 def classFactory(iface):
     return Stereonet(iface)
@@ -299,7 +404,11 @@ class Stereonet:
                     sel_plot, = ax.plot([], [], 'ro', markersize=10, zorder=5,
                                        fillstyle='none', markeredgewidth=2)
 
+                    _current_indices = [[]]
+                    _shift_held = [False]
+
                     def _update_selection(indices):
+                        _current_indices[0] = indices
                         if indices:
                             sel_plot.set_data(pts[indices, 0], pts[indices, 1])
                         else:
@@ -314,8 +423,15 @@ class Stereonet:
                             lyr.selectByIds(layer_sel[lid]) if lid in layer_sel else lyr.removeSelection()
 
                     def _on_lasso(verts):
-                        mask = Path(verts).contains_points(pts)
-                        _update_selection(np.where(mask)[0].tolist())
+                        # verts are in axes coords; convert pts (data) the same way
+                        pts_axes = ax.transAxes.inverted().transform(
+                            ax.transData.transform(pts))
+                        new_idx = np.where(Path(verts).contains_points(pts_axes))[0].tolist()
+                        if _shift_held[0]:
+                            combined = list(set(_current_indices[0]) | set(new_idx))
+                        else:
+                            combined = new_idx
+                        _update_selection(combined)
 
                     _press_xy = [None]
 
@@ -335,16 +451,27 @@ class Stereonet:
                         dists = np.hypot(pts[:, 0] - event.xdata, pts[:, 1] - event.ydata)
                         min_i = int(np.argmin(dists))
                         if dists[min_i] < 0.1:
-                            _update_selection([min_i])
+                            if event.key == 'shift':
+                                combined = list(set(_current_indices[0]) | {min_i})
+                            else:
+                                combined = [min_i]
+                            _update_selection(combined)
 
-                    def _on_key(event):
+                    def _on_key_press(event):
                         if event.key == 'escape':
                             _update_selection([])
+                        elif event.key == 'shift':
+                            _shift_held[0] = True
 
-                    self._stereonet_lasso = LassoSelector(ax, _on_lasso)
+                    def _on_key_release(event):
+                        if event.key == 'shift':
+                            _shift_held[0] = False
+
+                    self._stereonet_lasso = _BoundedLassoSelector(ax, _on_lasso)
                     fig.canvas.mpl_connect('button_press_event', _on_press)
                     fig.canvas.mpl_connect('button_release_event', _on_release)
-                    fig.canvas.mpl_connect('key_press_event', _on_key)
+                    fig.canvas.mpl_connect('key_press_event', _on_key_press)
+                    fig.canvas.mpl_connect('key_release_event', _on_key_release)
 
             ax.set_title(layer.name()+" [# "+str(len(iter))+"]",pad=24)
             plt.show()
