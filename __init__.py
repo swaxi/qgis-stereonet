@@ -144,6 +144,97 @@ class _BoundedLassoSelector:
             self.ax.figure.canvas.mpl_disconnect(cid)
 
 
+class StereonetSettingsDialog(QDialog):
+    """Settings dialog for controlling stereonet plot style.
+
+    If config_path points to an existing stereonet.json the dialog reads from
+    and writes back to that file.  Otherwise values are persisted in QSettings.
+    """
+
+    _QSETTINGS_ORG = 'qgis-stereonet'
+    _QSETTINGS_APP = 'stereonet'
+    _DEFAULTS = {
+        'showGtCircles': False, 'showContours': True,
+        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
+    }
+
+    def __init__(self, parent=None, config_path=None):
+        super().__init__(parent)
+        self._config_path = config_path
+        self.setWindowTitle('Stereographic Projection Settings')
+        self.setModal(True)
+
+        cfg = self._load()
+
+        outer = QVBoxLayout()
+        outer.addWidget(QLabel(
+            'Select Features to Plot '
+            '(Lower Hemisphere, Equal-Area Stereonet Projection):'))
+
+        row = QHBoxLayout()
+        self.gtCircles_cb  = QCheckBox('Great Circles')
+        self.contours_cb   = QCheckBox('Contours')
+        self.linPlanes_cb  = QCheckBox('Lineation-bearing Planes')
+        self.rose_cb       = QCheckBox('Rose Diagram')
+        self.kinematics_cb = QCheckBox('Kinematics')
+
+        self.gtCircles_cb.setChecked( cfg['showGtCircles'])
+        self.contours_cb.setChecked(  cfg['showContours'])
+        self.linPlanes_cb.setChecked( cfg['linPlanes'])
+        self.rose_cb.setChecked(      cfg['roseDiagram'])
+        self.kinematics_cb.setChecked(cfg['showKinematics'])
+
+        for cb in [self.gtCircles_cb, self.contours_cb, self.linPlanes_cb,
+                   self.rose_cb, self.kinematics_cb]:
+            row.addWidget(cb)
+
+        update_btn = QPushButton('Update Settings')
+        update_btn.clicked.connect(self._save_and_close)
+        row.addStretch()
+        row.addWidget(update_btn)
+
+        outer.addLayout(row)
+        self.setLayout(outer)
+
+    def _load(self):
+        """Load config from JSON file if present, else QSettings, else defaults."""
+        if self._config_path and os.path.exists(self._config_path):
+            with open(self._config_path, 'r') as f:
+                cfg = json.load(f)
+            return {k: cfg.get(k, v) for k, v in self._DEFAULTS.items()}
+        s = QSettings(self._QSETTINGS_ORG, self._QSETTINGS_APP)
+        if s.contains('showContours'):
+            return {k: s.value(k, v, type=bool) for k, v in self._DEFAULTS.items()}
+        return dict(self._DEFAULTS)
+
+    def _save_and_close(self):
+        cfg = {
+            'showGtCircles':  self.gtCircles_cb.isChecked(),
+            'showContours':   self.contours_cb.isChecked(),
+            'showKinematics': self.kinematics_cb.isChecked(),
+            'linPlanes':      self.linPlanes_cb.isChecked(),
+            'roseDiagram':    self.rose_cb.isChecked(),
+        }
+        if self._config_path and os.path.exists(self._config_path):
+            with open(self._config_path, 'w') as f:
+                json.dump(cfg, f, indent=4)
+        else:
+            s = QSettings(self._QSETTINGS_ORG, self._QSETTINGS_APP)
+            for k, v in cfg.items():
+                s.setValue(k, v)
+        self.accept()
+
+    @staticmethod
+    def load_qsettings():
+        """Return a stereoConfig dict from QSettings, or None if not yet saved."""
+        s = QSettings(StereonetSettingsDialog._QSETTINGS_ORG,
+                      StereonetSettingsDialog._QSETTINGS_APP)
+        if not s.contains('showContours'):
+            return None
+        return {k: s.value(k, v, type=bool)
+                for k, v in StereonetSettingsDialog._DEFAULTS.items()}
+
+
 def classFactory(iface):
     return Stereonet(iface)
 
@@ -157,9 +248,29 @@ class Stereonet:
         self.contourAction.triggered.connect(self.contourPlot)
         self.iface.addToolBarIcon(self.contourAction)
 
+        self.settingsAction = QAction(
+            QgsApplication.getThemeIcon('mActionOptions.svg'),
+            u'Stereonet Settings', self.iface.mainWindow())
+        self.settingsAction.triggered.connect(self.showSettings)
+        self.iface.addToolBarIcon(self.settingsAction)
+
     def unload(self):
         self.iface.removeToolBarIcon(self.contourAction)
         del self.contourAction
+        self.iface.removeToolBarIcon(self.settingsAction)
+        del self.settingsAction
+
+    def showSettings(self):
+        project_file = QgsProject.instance().fileName()
+        config_path = None
+        if project_file:
+            candidate = os.path.join(
+                os.path.dirname(os.path.abspath(project_file)),
+                "99_COMMAND_FILES_PLUGIN/stereonet.json")
+            if os.path.exists(candidate):
+                config_path = candidate
+        dlg = StereonetSettingsDialog(self.iface.mainWindow(), config_path=config_path)
+        dlg.exec_()
     
     def waxi_tangent_lineation_plot(self,ax,strikes, dips,kinematics,rhr,azs):
         """Makes a tangent lineation plot for normal faults with the given strikes,
@@ -277,6 +388,7 @@ class Stereonet:
         strikes = list()
         dips = list()
         feature_ids = list()
+        pole_labels = list()
         strikesref = list()
         dipsref = list()
         plunges=list()
@@ -298,12 +410,16 @@ class Stereonet:
 
         #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
-        stereoConfig={'showGtCircles':False,'showContours':True,'showKinematics':True,'linPlanes':True,'roseDiagram':False}
-        
+        stereoConfig = {'showGtCircles': False, 'showContours': True,
+                        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False}
 
-        if(os.path.exists(stereoConfigPath)):
-            with open(stereoConfigPath,"r") as json_file:
-                stereoConfig=json.load(json_file)
+        if os.path.exists(stereoConfigPath):
+            with open(stereoConfigPath, "r") as json_file:
+                stereoConfig = json.load(json_file)
+        else:
+            qs = StereonetSettingsDialog.load_qsettings()
+            if qs is not None:
+                stereoConfig = qs
         
         self.iface.layerTreeView().selectedLayers()
 
@@ -334,16 +450,19 @@ class Stereonet:
                         strikes.append(int(feature[ddname])+90)
                         dips.append(feature[dname])
                         feature_ids.append((layer, feature.id()))
+                        pole_labels.append(f"{int(feature[dname])}/{int(feature[ddname]):03d}")
 
                     elif strikeExists != -1 and dipExists != -1:
                         strikes.append(feature[sname])
                         dips.append(feature[dname])
                         feature_ids.append((layer, feature.id()))
+                        pole_labels.append(f"{int(feature[dname])}/{int(feature[sname]):03d}")
 
                     elif azimuthExists != -1 and plungeExists != -1:
                         strikes.append(int(feature[aname])+90)
                         dips.append(90-int(feature[pname]))
                         feature_ids.append((layer, feature.id()))
+                        pole_labels.append(f"{int(feature[pname])}/{int(feature[aname]):03d}")
 
                     if srefExists != -1 and drefExists != -1:
                         if(not feature[srefname] is None and not feature[drefname] is None):
@@ -369,11 +488,12 @@ class Stereonet:
         strikesref = [i for i in strikesref if i is not None]
         dipsref = [i for i in dipsref if i is not None]
         plunges = [i for i in plunges if i is not None]
-        valid = [(s, d, fid) for s, d, fid in zip(strikes, dips, feature_ids)
+        valid = [(s, d, fid, lbl) for s, d, fid, lbl in zip(strikes, dips, feature_ids, pole_labels)
                  if s is not None and d is not None]
         strikes = [v[0] for v in valid]
         dips = [v[1] for v in valid]
         feature_ids = [v[2] for v in valid]
+        pole_labels = [v[3] for v in valid]
 
         if(len(roseAzimuth) != 0 and stereoConfig['roseDiagram']):
             self.rose_diagram(roseAzimuth,layer.name()+" [# "+str(len(iter))+"]")
@@ -399,10 +519,48 @@ class Stereonet:
                     lat_data = np.array(pole_lines[0].get_ydata())
                     valid_pts = ~(np.isnan(lon_data) | np.isnan(lat_data))
                     pts = np.column_stack([lon_data[valid_pts], lat_data[valid_pts]])
-                    sel_fids = [feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
+                    sel_fids   = [feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
+                    sel_labels = [pole_labels[i] for i, ok in enumerate(valid_pts) if ok]
 
                     sel_plot, = ax.plot([], [], 'ro', markersize=10, zorder=5,
                                        fillstyle='none', markeredgewidth=2)
+
+                    annot = ax.annotate(
+                        '', xy=(0, 0), xycoords='data',
+                        xytext=(8, 8), textcoords='offset points',
+                        bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow',
+                                  ec='gray', alpha=0.9),
+                        fontsize=9, zorder=10)
+                    annot.set_visible(False)
+                    _hover_idx = [-1]
+
+                    def _on_hover(event):
+                        if len(pts) == 0:
+                            return
+                        if event.inaxes != ax:
+                            if _hover_idx[0] >= 0:
+                                _hover_idx[0] = -1
+                                annot.set_visible(False)
+                                fig.canvas.draw_idle()
+                            return
+                        pts_axes = ax.transAxes.inverted().transform(
+                            ax.transData.transform(pts))
+                        cur_axes = ax.transAxes.inverted().transform(
+                            [[event.x, event.y]])[0]
+                        dists = np.hypot(pts_axes[:, 0] - cur_axes[0],
+                                         pts_axes[:, 1] - cur_axes[1])
+                        min_i = int(np.argmin(dists))
+                        if dists[min_i] < 0.04:
+                            if min_i != _hover_idx[0]:
+                                _hover_idx[0] = min_i
+                                annot.xy = (pts[min_i, 0], pts[min_i, 1])
+                                annot.set_text(sel_labels[min_i])
+                                annot.set_visible(True)
+                                fig.canvas.draw_idle()
+                        elif _hover_idx[0] >= 0:
+                            _hover_idx[0] = -1
+                            annot.set_visible(False)
+                            fig.canvas.draw_idle()
 
                     _current_indices = [[]]
                     _shift_held = [False]
@@ -472,6 +630,7 @@ class Stereonet:
                     fig.canvas.mpl_connect('button_release_event', _on_release)
                     fig.canvas.mpl_connect('key_press_event', _on_key_press)
                     fig.canvas.mpl_connect('key_release_event', _on_key_release)
+                    fig.canvas.mpl_connect('motion_notify_event', _on_hover)
 
             ax.set_title(layer.name()+" [# "+str(len(iter))+"]",pad=24)
             plt.show()
