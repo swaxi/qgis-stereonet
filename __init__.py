@@ -156,6 +156,7 @@ class StereonetSettingsDialog(QDialog):
     _DEFAULTS = {
         'showGtCircles': False, 'showContours': True,
         'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
+        'fitGirdle': False,
     }
 
     def __init__(self, parent=None, config_path=None):
@@ -177,15 +178,17 @@ class StereonetSettingsDialog(QDialog):
         self.linPlanes_cb  = QCheckBox('Lineation-bearing Planes')
         self.rose_cb       = QCheckBox('Rose Diagram')
         self.kinematics_cb = QCheckBox('Kinematics')
+        self.fitGirdle_cb  = QCheckBox('Best Fit Girdle')
 
         self.gtCircles_cb.setChecked( cfg['showGtCircles'])
         self.contours_cb.setChecked(  cfg['showContours'])
         self.linPlanes_cb.setChecked( cfg['linPlanes'])
         self.rose_cb.setChecked(      cfg['roseDiagram'])
         self.kinematics_cb.setChecked(cfg['showKinematics'])
+        self.fitGirdle_cb.setChecked( cfg['fitGirdle'])
 
         for cb in [self.gtCircles_cb, self.contours_cb, self.linPlanes_cb,
-                   self.rose_cb, self.kinematics_cb]:
+                   self.rose_cb, self.kinematics_cb, self.fitGirdle_cb]:
             row.addWidget(cb)
 
         update_btn = QPushButton('Update Settings')
@@ -214,6 +217,7 @@ class StereonetSettingsDialog(QDialog):
             'showKinematics': self.kinematics_cb.isChecked(),
             'linPlanes':      self.linPlanes_cb.isChecked(),
             'roseDiagram':    self.rose_cb.isChecked(),
+            'fitGirdle':      self.fitGirdle_cb.isChecked(),
         }
         if self._config_path and os.path.exists(self._config_path):
             with open(self._config_path, 'w') as f:
@@ -512,6 +516,16 @@ class Stereonet:
                     ax.plane(strikesref,dipsref,'k',linewidth=1)
                 if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
                     self.waxi_tangent_lineation_plot(ax,rakes_strikes, rakes_dips,kinematics,rhr,azs)
+                if stereoConfig.get('fitGirdle', False) and len(strikes) >= 3:
+                    gs, gd = mplstereonet.fit_girdle(strikes, dips, measurement='poles')
+                    ax.plane(gs, gd, 'b-', linewidth=1.5)
+                    dip_dir = int(round((gs + 90) % 360))
+                    ax.text(1.0, -0.06,
+                            f'Best fit girdle: {int(round(gd))}/{dip_dir:03d}',
+                            transform=ax.transAxes, ha='center', va='top',
+                            fontsize=9, clip_on=False,
+                            bbox=dict(boxstyle='round,pad=0.3', fc='lightblue',
+                                      ec='steelblue', alpha=0.8))
 
                 # --- Interactive selection ---
                 if feature_ids and pole_lines:
