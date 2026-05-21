@@ -10,7 +10,7 @@ Download zip file from github, install into QGIS using plugin manager
 ## Usage
  1- Select a layer that has structural info in QGIS   
  2- Select the points you want to plot with one of the Select Tools (**NOT** the Identification Tool)   
- 3- You can use the built in setting icon to the right og the steroenet icon OR the WAXI QFIELD Plugin (https://github.com/swaxi/WAXI_QF) to control display behaviour   
+ 3- You can use the built in settings icon to the right of the steroenet icon OR via the WAXI QFIELD Plugin (https://github.com/swaxi/WAXI_QF) to control display behaviour   
  4- Click on WAXI Stereonet icon    ![plugin_icon](icon.png)  
     
 - Planar structures can be displayed as poles or great circles   
