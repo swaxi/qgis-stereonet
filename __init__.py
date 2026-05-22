@@ -580,9 +580,9 @@ class Stereonet:
                                                              measurement='poles')
                             ax.plane(gs, gd, 'b-', linewidth=1.5)
                             ax.pole(gs, gd, 'ro', markersize=8)
-                            dip_dir = int(round((gs + 90) % 360))
+                            plunge, bearing = mplstereonet.pole2plunge_bearing(gs, gd)
                             ax.text(1.0, -0.06,
-                                    f'Best fit girdle: {int(round(gd))}/{dip_dir:03d}',
+                                    f'Pole to best fit girdle: {int(round(plunge[0]))}/{int(round(bearing[0])):03d}',
                                     transform=ax.transAxes, ha='center', va='top',
                                     fontsize=9, clip_on=False,
                                     bbox=dict(boxstyle='round,pad=0.3', fc='lightblue',
