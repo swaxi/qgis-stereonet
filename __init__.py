@@ -156,7 +156,7 @@ class StereonetSettingsDialog(QDialog):
     _DEFAULTS = {
         'showGtCircles': False, 'showContours': True,
         'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
-        'fitGirdle': False,
+        'fitGirdle': False, 'dataType': 'Planes Only',
     }
 
     def __init__(self, parent=None, config_path=None):
@@ -197,6 +197,16 @@ class StereonetSettingsDialog(QDialog):
         row.addWidget(update_btn)
 
         outer.addLayout(row)
+
+        dt_row = QHBoxLayout()
+        dt_row.addWidget(QLabel('Data to plot:'))
+        self.dataType_cb = QComboBox()
+        self.dataType_cb.addItems(['Planes Only', 'Lineations Only', 'Lineations with Planes'])
+        self.dataType_cb.setCurrentText(cfg.get('dataType', 'Planes Only'))
+        dt_row.addWidget(self.dataType_cb)
+        dt_row.addStretch()
+        outer.addLayout(dt_row)
+
         self.setLayout(outer)
 
     def _load(self):
@@ -207,7 +217,10 @@ class StereonetSettingsDialog(QDialog):
             return {k: cfg.get(k, v) for k, v in self._DEFAULTS.items()}
         s = QSettings(self._QSETTINGS_ORG, self._QSETTINGS_APP)
         if s.contains('showContours'):
-            return {k: s.value(k, v, type=bool) for k, v in self._DEFAULTS.items()}
+            result = {}
+            for k, v in self._DEFAULTS.items():
+                result[k] = s.value(k, v, type=bool) if isinstance(v, bool) else s.value(k, v)
+            return result
         return dict(self._DEFAULTS)
 
     def _save_and_close(self):
@@ -218,6 +231,7 @@ class StereonetSettingsDialog(QDialog):
             'linPlanes':      self.linPlanes_cb.isChecked(),
             'roseDiagram':    self.rose_cb.isChecked(),
             'fitGirdle':      self.fitGirdle_cb.isChecked(),
+            'dataType':       self.dataType_cb.currentText(),
         }
         if self._config_path and os.path.exists(self._config_path):
             with open(self._config_path, 'w') as f:
@@ -235,8 +249,19 @@ class StereonetSettingsDialog(QDialog):
                       StereonetSettingsDialog._QSETTINGS_APP)
         if not s.contains('showContours'):
             return None
-        return {k: s.value(k, v, type=bool)
-                for k, v in StereonetSettingsDialog._DEFAULTS.items()}
+        result = {}
+        for k, v in StereonetSettingsDialog._DEFAULTS.items():
+            result[k] = s.value(k, v, type=bool) if isinstance(v, bool) else s.value(k, v)
+        return result
+
+
+def _attr(v):
+    """Return a QGIS feature attribute as a Python value, or None if null."""
+    if v is None:
+        return None
+    if hasattr(v, 'isNull') and v.isNull():
+        return None
+    return v
 
 
 def classFactory(iface):
@@ -389,21 +414,23 @@ class Stereonet:
         knames= ['Kinematics', 'kinematics']
         prhrnames= ['Pitch_RHR', 'Pitch_rhr', 'Pitch_Rhr', 'Pitch', 'pitch_rhr', 'RHR_pitch', 'rhr_pitch', 'pitch']
         
-        strikes = list()
-        dips = list()
-        feature_ids = list()
-        pole_labels = list()
+        plane_strikes = list()
+        plane_dips = list()
+        plane_feature_ids = list()
+        plane_labels = list()
+        linear_plunges = list()
+        linear_bearings = list()
+        linear_feature_ids = list()
+        linear_labels = list()
         strikesref = list()
         dipsref = list()
-        plunges=list()
-        kinematics=list()
-        rakes_strikes=list()
-        rakes_dips=list()
-        rakes_pstrikes=list()
-        rakes_pdips=list()
+        plunges = list()
+        kinematics = list()
+        rakes_strikes = list()
+        rakes_dips = list()
         roseAzimuth = list()
-        rhr=list()
-        azs=list()
+        rhr = list()
+        azs = list()
 
 
         project = QgsProject.instance()
@@ -415,7 +442,8 @@ class Stereonet:
         #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
         stereoConfig = {'showGtCircles': False, 'showContours': True,
-                        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False}
+                        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
+                        'fitGirdle': False, 'dataType': 'Planes Only'}
 
         if os.path.exists(stereoConfigPath):
             with open(stereoConfigPath, "r") as json_file:
@@ -448,41 +476,52 @@ class Stereonet:
 
 
                 for feature in iter:
-                  
+                    # Capture plane data (dip direction/dip or strike/dip)
                     if ddrExists != -1 and dipExists != -1:
-                        print(dname,ddname)
-                        strikes.append(int(feature[ddname])+90)
-                        dips.append(feature[dname])
-                        feature_ids.append((layer, feature.id()))
-                        pole_labels.append(f"{int(feature[dname])}/{int(feature[ddname]):03d}")
-
+                        val_dd, val_d = _attr(feature[ddname]), _attr(feature[dname])
+                        if val_dd is not None and val_d is not None:
+                            plane_strikes.append((int(val_dd) - 90) % 360)
+                            plane_dips.append(float(val_d))
+                            plane_feature_ids.append((layer, feature.id()))
+                            plane_labels.append(f"{int(val_d)}/{int(val_dd):03d}")
                     elif strikeExists != -1 and dipExists != -1:
-                        strikes.append(feature[sname])
-                        dips.append(feature[dname])
-                        feature_ids.append((layer, feature.id()))
-                        pole_labels.append(f"{int(feature[dname])}/{int(feature[sname]):03d}")
+                        val_s, val_d = _attr(feature[sname]), _attr(feature[dname])
+                        if val_s is not None and val_d is not None:
+                            plane_strikes.append(float(val_s))
+                            plane_dips.append(float(val_d))
+                            plane_feature_ids.append((layer, feature.id()))
+                            plane_labels.append(f"{int(val_d)}/{int(val_s):03d}")
 
-                    elif azimuthExists != -1 and plungeExists != -1:
-                        strikes.append(int(feature[aname])+90)
-                        dips.append(90-int(feature[pname]))
-                        feature_ids.append((layer, feature.id()))
-                        pole_labels.append(f"{int(feature[pname])}/{int(feature[aname]):03d}")
+                    # Capture linear data (azimuth/plunge) independently
+                    if azimuthExists != -1 and plungeExists != -1:
+                        val_a, val_p = _attr(feature[aname]), _attr(feature[pname])
+                        if val_a is not None and val_p is not None:
+                            linear_plunges.append(int(val_p))
+                            linear_bearings.append(int(val_a))
+                            linear_feature_ids.append((layer, feature.id()))
+                            linear_labels.append(f"{int(val_p)}/{int(val_a):03d}")
 
                     if srefExists != -1 and drefExists != -1:
-                        if(not feature[srefname] is None and not feature[drefname] is None):
-                            strikesref.append(feature[srefname])
-                            dipsref.append(feature[drefname])
-                    
-                    if plungeExists != -1 and drefExists != -1:
-                        if(feature[pname]  and  feature[drefname]  and  feature[kname] ):
-                            rakes_strikes.append(feature[srefname])
-                            rakes_dips.append(feature[drefname])
-                            kinematics.append(feature[kname])
-                            rhr.append(feature[prhrname])
-                            azs.append(feature[aname])
+                        vs, vd = _attr(feature[srefname]), _attr(feature[drefname])
+                        if vs is not None and vd is not None:
+                            strikesref.append(vs)
+                            dipsref.append(vd)
 
-                    if azimuthExists != -1 and stereoConfig['roseDiagram']:
-                        roseAzimuth.append(feature[aname])
+                    if plungeExists != -1 and drefExists != -1:
+                        vp = _attr(feature[pname])
+                        vdr = _attr(feature[drefname])
+                        vk = _attr(feature[kname])
+                        if vp and vdr and vk:
+                            rakes_strikes.append(_attr(feature[srefname]))
+                            rakes_dips.append(vdr)
+                            kinematics.append(vk)
+                            rhr.append(_attr(feature[prhrname]))
+                            azs.append(_attr(feature[aname]))
+
+                    if azimuthExists != -1 and stereoConfig.get('roseDiagram', False):
+                        va = _attr(feature[aname])
+                        if va is not None:
+                            roseAzimuth.append(va)
  
 
 
@@ -491,162 +530,198 @@ class Stereonet:
 
         strikesref = [i for i in strikesref if i is not None]
         dipsref = [i for i in dipsref if i is not None]
-        plunges = [i for i in plunges if i is not None]
-        valid = [(s, d, fid, lbl) for s, d, fid, lbl in zip(strikes, dips, feature_ids, pole_labels)
-                 if s is not None and d is not None]
-        strikes = [v[0] for v in valid]
-        dips = [v[1] for v in valid]
-        feature_ids = [v[2] for v in valid]
-        pole_labels = [v[3] for v in valid]
 
-        if(len(roseAzimuth) != 0 and stereoConfig['roseDiagram']):
-            self.rose_diagram(roseAzimuth,layer.name()+" [# "+str(len(iter))+"]")
-        elif (len(strikes) != 0):
+        # Determine effective data type; special layer names override the setting
+        layer_names = [l.name() for l in layers if l.type() == QgsMapLayer.VectorLayer]
+        is_special_layer = any('Lineations_PT' in n or 'Folds_PT' in n for n in layer_names)
+        effective_data_type = ('Lineations with Planes' if is_special_layer
+                               else stereoConfig.get('dataType', 'Planes Only'))
+        show_planes = effective_data_type in ('Planes Only', 'Lineations with Planes')
+        show_linears = effective_data_type in ('Lineations Only', 'Lineations with Planes')
+        has_planes = len(plane_strikes) > 0
+        has_linears = len(linear_plunges) > 0
+
+        if len(roseAzimuth) != 0 and stereoConfig.get('roseDiagram', False):
+            self.rose_diagram(roseAzimuth, layer.name() + " [# " + str(len(iter)) + "]")
+        elif (show_planes and has_planes) or (show_linears and has_linears):
             fig, ax = mplstereonet.subplots()
-            ax.set_azimuth_ticks([0,30,60,90,120,150,180,210,240,270,300,330])
-            ax.set_azimuth_ticklabels(['0\u00b0','30\u00b0','60\u00b0','90\u00b0','120\u00b0','150\u00b0','180\u00b0','210\u00b0','240\u00b0','270\u00b0','300\u00b0','330\u00b0'])
+            ax.set_azimuth_ticks([0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330])
+            ax.set_azimuth_ticklabels(['0\u00b0', '30\u00b0', '60\u00b0', '90\u00b0',
+                                        '120\u00b0', '150\u00b0', '180\u00b0', '210\u00b0',
+                                        '240\u00b0', '270\u00b0', '300\u00b0', '330\u00b0'])
             ax.grid(kind='equal_area_stereonet')
-            if(stereoConfig['showContours']):
-                ax.density_contour(strikes, dips, measurement='poles',cmap=cm.coolwarm,method='exponential_kamb',sigma=1.5,linewidths =0.5)
-            if(stereoConfig['showGtCircles'] and strikeExists != -1):
-                ax.plane(strikes, dips, 'k',linewidth=1)
+
+            pole_lines = None
+            lin_lines = None
+
+            if effective_data_type == 'Lineations with Planes':
+                # Planes as great circles, lineations as points
+                if show_planes and has_planes:
+                    ax.plane(plane_strikes, plane_dips, 'k', linewidth=1)
+                if show_linears and has_linears:
+                    lin_lines = ax.line(linear_plunges, linear_bearings, 'k.', markersize=5)
             else:
-                pole_lines = ax.pole(strikes, dips, 'k.', markersize=5)
-                if(srefExists != -1 and drefExists != -1 and stereoConfig['linPlanes']):
-                    ax.plane(strikesref,dipsref,'k',linewidth=1)
-                if plungeExists != -1 and drefExists != -1 and stereoConfig['showKinematics']:
-                    self.waxi_tangent_lineation_plot(ax,rakes_strikes, rakes_dips,kinematics,rhr,azs)
-                if stereoConfig.get('fitGirdle', False) and len(strikes) >= 3:
-                    gs, gd = mplstereonet.fit_girdle(strikes, dips, measurement='poles')
-                    ax.plane(gs, gd, 'b-', linewidth=1.5)
-                    dip_dir = int(round((gs + 90) % 360))
-                    ax.text(1.0, -0.06,
-                            f'Best fit girdle: {int(round(gd))}/{dip_dir:03d}',
-                            transform=ax.transAxes, ha='center', va='top',
-                            fontsize=9, clip_on=False,
-                            bbox=dict(boxstyle='round,pad=0.3', fc='lightblue',
-                                      ec='steelblue', alpha=0.8))
+                if show_planes and has_planes:
+                    if stereoConfig.get('showContours', True):
+                        ax.density_contour(plane_strikes, plane_dips, measurement='poles',
+                                           cmap=cm.coolwarm, method='exponential_kamb',
+                                           sigma=1.5, linewidths=0.5)
+                    if stereoConfig.get('showGtCircles', False):
+                        ax.plane(plane_strikes, plane_dips, 'k', linewidth=1)
+                    else:
+                        pole_lines = ax.pole(plane_strikes, plane_dips, 'k.', markersize=5)
+                        if srefExists != -1 and drefExists != -1 and stereoConfig.get('linPlanes', True):
+                            ax.plane(strikesref, dipsref, 'k', linewidth=1)
+                        if plungeExists != -1 and drefExists != -1 and stereoConfig.get('showKinematics', True):
+                            self.waxi_tangent_lineation_plot(ax, rakes_strikes, rakes_dips,
+                                                             kinematics, rhr, azs)
+                        if stereoConfig.get('fitGirdle', False) and len(plane_strikes) >= 3:
+                            gs, gd = mplstereonet.fit_girdle(plane_strikes, plane_dips,
+                                                             measurement='poles')
+                            ax.plane(gs, gd, 'b-', linewidth=1.5)
+                            ax.pole(gs, gd, 'ro', markersize=8)
+                            dip_dir = int(round((gs + 90) % 360))
+                            ax.text(1.0, -0.06,
+                                    f'Best fit girdle: {int(round(gd))}/{dip_dir:03d}',
+                                    transform=ax.transAxes, ha='center', va='top',
+                                    fontsize=9, clip_on=False,
+                                    bbox=dict(boxstyle='round,pad=0.3', fc='lightblue',
+                                              ec='steelblue', alpha=0.8))
+                if show_linears and has_linears:
+                    lin_lines = ax.line(linear_plunges, linear_bearings, 'k.', markersize=5)
 
-                # --- Interactive selection ---
-                if feature_ids and pole_lines:
-                    lon_data = np.array(pole_lines[0].get_xdata())
-                    lat_data = np.array(pole_lines[0].get_ydata())
-                    valid_pts = ~(np.isnan(lon_data) | np.isnan(lat_data))
+            # Resolve which plotted points to use for interactive selection
+            pts = None
+            sel_fids = None
+            sel_labels = None
+            if lin_lines and linear_feature_ids:
+                lon_data = np.array(lin_lines[0].get_xdata())
+                lat_data = np.array(lin_lines[0].get_ydata())
+                valid_pts = ~(np.isnan(lon_data) | np.isnan(lat_data))
+                if valid_pts.any():
                     pts = np.column_stack([lon_data[valid_pts], lat_data[valid_pts]])
-                    sel_fids   = [feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
-                    sel_labels = [pole_labels[i] for i, ok in enumerate(valid_pts) if ok]
+                    sel_fids   = [linear_feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
+                    sel_labels = [linear_labels[i]      for i, ok in enumerate(valid_pts) if ok]
+            elif pole_lines and plane_feature_ids:
+                lon_data = np.array(pole_lines[0].get_xdata())
+                lat_data = np.array(pole_lines[0].get_ydata())
+                valid_pts = ~(np.isnan(lon_data) | np.isnan(lat_data))
+                if valid_pts.any():
+                    pts = np.column_stack([lon_data[valid_pts], lat_data[valid_pts]])
+                    sel_fids   = [plane_feature_ids[i] for i, ok in enumerate(valid_pts) if ok]
+                    sel_labels = [plane_labels[i]      for i, ok in enumerate(valid_pts) if ok]
 
-                    sel_plot, = ax.plot([], [], 'ro', markersize=10, zorder=5,
-                                       fillstyle='none', markeredgewidth=2)
+            if pts is not None and len(pts) > 0:
+                sel_plot, = ax.plot([], [], 'ro', markersize=10, zorder=5,
+                                    fillstyle='none', markeredgewidth=2)
 
-                    annot = ax.annotate(
-                        '', xy=(0, 0), xycoords='data',
-                        xytext=(8, 8), textcoords='offset points',
-                        bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow',
-                                  ec='gray', alpha=0.9),
-                        fontsize=9, zorder=10)
-                    annot.set_visible(False)
-                    _hover_idx = [-1]
+                annot = ax.annotate(
+                    '', xy=(0, 0), xycoords='data',
+                    xytext=(8, 8), textcoords='offset points',
+                    bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow',
+                              ec='gray', alpha=0.9),
+                    fontsize=9, zorder=10)
+                annot.set_visible(False)
+                _hover_idx = [-1]
 
-                    def _on_hover(event):
-                        if len(pts) == 0:
-                            return
-                        if event.inaxes != ax:
-                            if _hover_idx[0] >= 0:
-                                _hover_idx[0] = -1
-                                annot.set_visible(False)
-                                fig.canvas.draw_idle()
-                            return
-                        pts_axes = ax.transAxes.inverted().transform(
-                            ax.transData.transform(pts))
-                        cur_axes = ax.transAxes.inverted().transform(
-                            [[event.x, event.y]])[0]
-                        dists = np.hypot(pts_axes[:, 0] - cur_axes[0],
-                                         pts_axes[:, 1] - cur_axes[1])
-                        min_i = int(np.argmin(dists))
-                        if dists[min_i] < 0.04:
-                            if min_i != _hover_idx[0]:
-                                _hover_idx[0] = min_i
-                                annot.xy = (pts[min_i, 0], pts[min_i, 1])
-                                annot.set_text(sel_labels[min_i])
-                                annot.set_visible(True)
-                                fig.canvas.draw_idle()
-                        elif _hover_idx[0] >= 0:
+                def _on_hover(event):
+                    if len(pts) == 0:
+                        return
+                    if event.inaxes != ax:
+                        if _hover_idx[0] >= 0:
                             _hover_idx[0] = -1
                             annot.set_visible(False)
                             fig.canvas.draw_idle()
-
-                    _current_indices = [[]]
-                    _shift_held = [False]
-
-                    def _update_selection(indices):
-                        _current_indices[0] = indices
-                        if indices:
-                            sel_plot.set_data(pts[indices, 0], pts[indices, 1])
-                        else:
-                            sel_plot.set_data([], [])
+                        return
+                    pts_axes = ax.transAxes.inverted().transform(
+                        ax.transData.transform(pts))
+                    cur_axes = ax.transAxes.inverted().transform(
+                        [[event.x, event.y]])[0]
+                    dists = np.hypot(pts_axes[:, 0] - cur_axes[0],
+                                     pts_axes[:, 1] - cur_axes[1])
+                    min_i = int(np.argmin(dists))
+                    if dists[min_i] < 0.04:
+                        if min_i != _hover_idx[0]:
+                            _hover_idx[0] = min_i
+                            annot.xy = (pts[min_i, 0], pts[min_i, 1])
+                            annot.set_text(sel_labels[min_i])
+                            annot.set_visible(True)
+                            fig.canvas.draw_idle()
+                    elif _hover_idx[0] >= 0:
+                        _hover_idx[0] = -1
+                        annot.set_visible(False)
                         fig.canvas.draw_idle()
-                        layer_sel = defaultdict(list)
-                        for i in indices:
-                            lyr, fid = sel_fids[i]
-                            layer_sel[id(lyr)].append(fid)
-                        all_layers = {id(lyr): lyr for lyr, _ in sel_fids}
-                        for lid, lyr in all_layers.items():
-                            lyr.selectByIds(layer_sel[lid]) if lid in layer_sel else lyr.removeSelection()
 
-                    def _on_lasso(verts):
-                        # verts are in axes coords; convert pts (data) the same way
-                        pts_axes = ax.transAxes.inverted().transform(
-                            ax.transData.transform(pts))
-                        new_idx = np.where(Path(verts).contains_points(pts_axes))[0].tolist()
-                        if _shift_held[0]:
-                            combined = list(set(_current_indices[0]) | set(new_idx))
+                _current_indices = [[]]
+                _shift_held = [False]
+
+                def _update_selection(indices):
+                    _current_indices[0] = indices
+                    if indices:
+                        sel_plot.set_data(pts[indices, 0], pts[indices, 1])
+                    else:
+                        sel_plot.set_data([], [])
+                    fig.canvas.draw_idle()
+                    layer_sel = defaultdict(list)
+                    for i in indices:
+                        lyr, fid = sel_fids[i]
+                        layer_sel[id(lyr)].append(fid)
+                    all_layers = {id(lyr): lyr for lyr, _ in sel_fids}
+                    for lid, lyr in all_layers.items():
+                        lyr.selectByIds(layer_sel[lid]) if lid in layer_sel else lyr.removeSelection()
+
+                def _on_lasso(verts):
+                    pts_axes = ax.transAxes.inverted().transform(
+                        ax.transData.transform(pts))
+                    new_idx = np.where(Path(verts).contains_points(pts_axes))[0].tolist()
+                    if _shift_held[0]:
+                        combined = list(set(_current_indices[0]) | set(new_idx))
+                    else:
+                        combined = new_idx
+                    _update_selection(combined)
+
+                _press_xy = [None]
+
+                def _on_press(event):
+                    if event.inaxes == ax and event.button == 1:
+                        _press_xy[0] = (event.x, event.y)
+
+                def _on_release(event):
+                    if event.button != 1 or _press_xy[0] is None or event.xdata is None:
+                        _press_xy[0] = None
+                        return
+                    moved = (abs(event.x - _press_xy[0][0]) > 5 or
+                             abs(event.y - _press_xy[0][1]) > 5)
+                    _press_xy[0] = None
+                    if moved or event.inaxes != ax:
+                        return
+                    dists = np.hypot(pts[:, 0] - event.xdata, pts[:, 1] - event.ydata)
+                    min_i = int(np.argmin(dists))
+                    if dists[min_i] < 0.1:
+                        if event.key == 'shift':
+                            combined = list(set(_current_indices[0]) | {min_i})
                         else:
-                            combined = new_idx
+                            combined = [min_i]
                         _update_selection(combined)
 
-                    _press_xy = [None]
+                def _on_key_press(event):
+                    if event.key == 'escape':
+                        _update_selection([])
+                    elif event.key == 'shift':
+                        _shift_held[0] = True
 
-                    def _on_press(event):
-                        if event.inaxes == ax and event.button == 1:
-                            _press_xy[0] = (event.x, event.y)
+                def _on_key_release(event):
+                    if event.key == 'shift':
+                        _shift_held[0] = False
 
-                    def _on_release(event):
-                        if event.button != 1 or _press_xy[0] is None or event.xdata is None:
-                            _press_xy[0] = None
-                            return
-                        moved = (abs(event.x - _press_xy[0][0]) > 5 or
-                                 abs(event.y - _press_xy[0][1]) > 5)
-                        _press_xy[0] = None
-                        if moved or event.inaxes != ax:
-                            return
-                        dists = np.hypot(pts[:, 0] - event.xdata, pts[:, 1] - event.ydata)
-                        min_i = int(np.argmin(dists))
-                        if dists[min_i] < 0.1:
-                            if event.key == 'shift':
-                                combined = list(set(_current_indices[0]) | {min_i})
-                            else:
-                                combined = [min_i]
-                            _update_selection(combined)
+                self._stereonet_lasso = _BoundedLassoSelector(ax, _on_lasso)
+                fig.canvas.mpl_connect('button_press_event', _on_press)
+                fig.canvas.mpl_connect('button_release_event', _on_release)
+                fig.canvas.mpl_connect('key_press_event', _on_key_press)
+                fig.canvas.mpl_connect('key_release_event', _on_key_release)
+                fig.canvas.mpl_connect('motion_notify_event', _on_hover)
 
-                    def _on_key_press(event):
-                        if event.key == 'escape':
-                            _update_selection([])
-                        elif event.key == 'shift':
-                            _shift_held[0] = True
-
-                    def _on_key_release(event):
-                        if event.key == 'shift':
-                            _shift_held[0] = False
-
-                    self._stereonet_lasso = _BoundedLassoSelector(ax, _on_lasso)
-                    fig.canvas.mpl_connect('button_press_event', _on_press)
-                    fig.canvas.mpl_connect('button_release_event', _on_release)
-                    fig.canvas.mpl_connect('key_press_event', _on_key_press)
-                    fig.canvas.mpl_connect('key_release_event', _on_key_release)
-                    fig.canvas.mpl_connect('motion_notify_event', _on_hover)
-
-            ax.set_title(layer.name()+" [# "+str(len(iter))+"]",pad=24)
+            ax.set_title(layer.name() + " [# " + str(len(iter)) + "]", pad=24)
             plt.show()
 
         else:

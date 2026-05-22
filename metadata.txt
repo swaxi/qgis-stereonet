@@ -17,9 +17,12 @@ repository=https://gitlab.com/dchilds/qgis-stereonet
 # Recommended items:
 
 # Uncomment the following line and add your changelog:
-changelog=0.3.02 Added suport to select from steronet and update map selections
-    Add popup labels with point orientation info
-    Add best fit girdle option
+changelog=0.3.02 Added suport to select from steronet and update map selections   
+    Add popup labels with point orientation info   
+    Add best fit girdle option   
+    Add pole to best fit plane   
+    Fix error in Dip_Dir plus lines orientation    
+    Add user choice for lines, planes or both if all are available   
     0.3.01 Added support for having either strikes or dip directions of the geologic structures
 
 # Tags are comma separated with spaces allowed
