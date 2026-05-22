@@ -581,12 +581,33 @@ class Stereonet:
                             ax.plane(gs, gd, 'b-', linewidth=1.5)
                             ax.pole(gs, gd, 'ro', markersize=8)
                             plunge, bearing = mplstereonet.pole2plunge_bearing(gs, gd)
-                            ax.text(1.0, -0.06,
-                                    f'Pole to best fit girdle: {int(round(plunge[0]))}/{int(round(bearing[0])):03d}',
-                                    transform=ax.transAxes, ha='center', va='top',
-                                    fontsize=9, clip_on=False,
-                                    bbox=dict(boxstyle='round,pad=0.3', fc='lightblue',
-                                              ec='steelblue', alpha=0.8))
+                            _, _, evals = mplstereonet.eigenvectors(
+                                plane_strikes, plane_dips, measurement='poles')
+                            e1, e2, e3 = evals[0], evals[1], evals[2]
+                            pb = (f'Pole to best fit girdle\n'
+                                  f'  Plunge/Bearing: '
+                                  f'{int(round(plunge[0]))}/{int(round(bearing[0])):03d}')
+                            if e1 > e2 > e3 > 1e-10:
+                                K = np.log(e1 / e2) / np.log(e2 / e3)
+                                C = np.log(e1 / e3)
+                                kshape = ('girdle' if K < 0.9 else
+                                          'cluster' if K > 1.1 else 'transitional')
+                                info = (
+                                    f'{pb}\n'
+                                    f'  K = {K:.2f} ({kshape}),  C = {C:.2f}\n'
+                                    f'{"─" * 32}\n'
+                                    f'K (shape):\n'
+                                    f'  <1 = girdle  ≈1 = transitional  >1 = cluster\n'
+                                    f'C (strength):\n'
+                                    f'  0 = random → larger = stronger fabric'
+                                )
+                            else:
+                                info = pb
+                            ax.text(.9, -0.1, info,
+                                    transform=ax.transAxes, ha='left', va='bottom',
+                                    fontsize=7, clip_on=False,
+                                    bbox=dict(boxstyle='round,pad=0.4', fc='lightblue',
+                                              ec='steelblue', alpha=0.85))
                 if show_linears and has_linears:
                     lin_lines = ax.line(linear_plunges, linear_bearings, 'k.', markersize=5)
 

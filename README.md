@@ -43,8 +43,10 @@ Press Escape in the stereonet window to clear all selected poles and remove the 
 - The lasso and click selection replace the current selection each time — they do not add to an existing selection.
 - If a pole is plotted but the click doesn't register, try clicking a little closer to the centre of the point — the tolerance is tuned to the stereonet's projection coordinate space.
 - The stereonet window must remain open and in focus for keyboard shortcuts (e.g., Escape) to work.
-
-
+- If best fit great circle is toggled on, the quality of the best ft is supplied as:
+- **K** uses the Woodcock (1977) formula ln(e1/e2) / ln(e2/e3) where e1 ≥ e2 ≥ e3 are the covariance eigenvalues. The ±0.1 window around 1.0 labels the grey zone as "transitional" rather than forcing a binary call.
+- **C** = ln(e1/e3) — it's 0 for a perfectly isotropic (random) cloud and grows without bound as the fabric tightens; there's no upper cap, so "larger = stronger" is the correct framing.
+   
 ## Field Names
 
 The following field names are currently recognised, you can go in the file _ _init.py__ from around line 159 and add your own if you like:
