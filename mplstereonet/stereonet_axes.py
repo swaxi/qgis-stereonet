@@ -446,7 +446,7 @@ class StereonetAxes(LambertAxes):
         Returns
         -------
         A sequence of Line2D artists representing the point(s) specified by
-        `strike` and `dip`.
+        `plunge` and `bearing`.
         """
         lon, lat = stereonet_math.pole(strike, dip)
         args, kwargs = self._point_plot_defaults(args, kwargs)
@@ -473,7 +473,7 @@ class StereonetAxes(LambertAxes):
         Returns
         -------
         A sequence of Line2D artists representing the point(s) specified by
-        `strike` and `dip`.
+        `plunge` and `bearing`.
         """
         lon, lat = stereonet_math.rake(strike, dip, rake_angle)
         args, kwargs = self._point_plot_defaults(args, kwargs)
@@ -496,11 +496,11 @@ class StereonetAxes(LambertAxes):
         Returns
         -------
         A sequence of Line2D artists representing the point(s) specified by
-        `strike` and `dip`.
+        `plunge` and `bearing`.
         """
         lon, lat = stereonet_math.line(plunge, bearing)
         args, kwargs = self._point_plot_defaults(args, kwargs)
-        return self.plot([lon], [lat], *args, **kwargs)
+        return self.plot(lon, lat, *args, **kwargs)
 
     def _point_plot_defaults(self, args, kwargs):
         """To avoid confusion for new users, this ensures that "scattered"
