@@ -29,14 +29,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.path import Path
+from matplotlib.patches import FancyArrowPatch
 from collections import defaultdict
 from .mplstereonet import *
+from .mplstereonet import stereonet_math
 from qgis.core import *
 from qgis.gui import *
 import os
 from qgis.core import QgsProject
 from math import asin,sin,degrees,radians,cos,tan,atan
 import json
+import re
 
 class _BoundedLassoSelector:
     """Lasso selector that works entirely in axes coordinates (0-1 space).
@@ -155,13 +158,18 @@ class StereonetSettingsDialog(QDialog):
     _QSETTINGS_APP = 'stereonet'
     _DEFAULTS = {
         'showGtCircles': False, 'showContours': True,
-        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
+        'showKinematics': False, 'linPlanes': True, 'roseDiagram': False,
         'fitGirdle': False, 'dataType': 'Planes Only',
+        'kinematicsField': None,
     }
 
-    def __init__(self, parent=None, config_path=None, detected_data_type=None):
+    def __init__(self, parent=None, config_path=None, detected_data_type=None,
+                 selected_layers=None, kinematics_candidate_fields=None):
         super().__init__(parent)
         self._config_path = config_path
+        self._selected_layers = selected_layers or []
+        self._kinematics_candidate_fields = kinematics_candidate_fields or []
+        self._selected_kinematics_field = None
         self.setWindowTitle('Stereographic Projection Settings')
         self.setModal(True)
 
@@ -184,8 +192,13 @@ class StereonetSettingsDialog(QDialog):
         self.contours_cb.setChecked(  cfg['showContours'])
         self.linPlanes_cb.setChecked( cfg['linPlanes'])
         self.rose_cb.setChecked(      cfg['roseDiagram'])
-        self.kinematics_cb.setChecked(cfg['showKinematics'])
         self.fitGirdle_cb.setChecked( cfg['fitGirdle'])
+
+        self._selected_kinematics_field = cfg.get('kinematicsField')
+        kin_available = self._kinematics_context_available()
+        self.kinematics_cb.setEnabled(kin_available)
+        self.kinematics_cb.setChecked(bool(cfg.get('showKinematics', False)) and kin_available)
+        self.kinematics_cb.toggled.connect(self._on_kinematics_toggled)
 
         for cb in [self.gtCircles_cb, self.contours_cb, self.linPlanes_cb,
                    self.rose_cb, self.kinematics_cb, self.fitGirdle_cb]:
@@ -229,6 +242,122 @@ class StereonetSettingsDialog(QDialog):
             self.linPlanes_cb.setChecked(False)
             self.linPlanes_cb.setEnabled(False)
 
+    @staticmethod
+    def _normalise_token(value):
+        return re.sub(r'[^a-z0-9]+', '', str(value or '').lower())
+
+    @classmethod
+    def _normalise_kinematic_value(cls, value):
+        lookup = {
+            'strikeslip': 'strike-slip',
+            'sinslip': 'sinistral',
+            'sinistral': 'sinistral',
+            'sinistralslip': 'sinistral',
+            'leftlateral': 'sinistral',
+            'sin': 'sinistral',
+            'dextral': 'dextral',
+            'dextralslip': 'dextral',
+            'rightlateral': 'dextral',
+            'dex': 'dextral',
+            'dipslip': 'dip-slip',
+            'normal': 'normal',
+            'normalslip': 'normal',
+            'extensional': 'normal',
+            'reverse': 'reverse',
+            'reverseslip': 'reverse',
+            'thrust': 'reverse',
+            'compressional': 'reverse',
+        }
+        return lookup.get(cls._normalise_token(value))
+
+    @staticmethod
+    def _field_exists_on_layer(layer, field_name):
+        return layer.fields().lookupField(field_name) != -1
+
+    def _layer_has_lineation(self, layer):
+        az_names = ['Azimuth', 'azimuth', 'Bearing', 'bearing', 'Trend', 'TREND']
+        pl_names = ['Plunge', 'plunge']
+        has_az = any(self._field_exists_on_layer(layer, name) for name in az_names)
+        has_pl = any(self._field_exists_on_layer(layer, name) for name in pl_names)
+        return has_az and has_pl
+
+    def _layer_has_bearing_plane(self, layer):
+        strike_names = ['Strike_RHR', 'Strike', 'strike', 'Strike_ref', 'Strike_Ref', 'strike_ref']
+        dipdir_names = ['Dip_Direction', 'Dip_Dir', 'DipDirection', 'dip_direction',
+                        'DipDir', 'DIPDIR', 'DipDir_ref', 'Dip_Dir_ref',
+                        'DipDirection_ref', 'Dip_Direction_ref', 'DipDirection_Ref',
+                        'dipdir_ref', 'dip_dir_ref', 'dip_direction_ref']
+        dip_names = ['Dip', 'dip', 'Dip_ref', 'Dip_Ref', 'dip_ref']
+        has_orientation = any(self._field_exists_on_layer(layer, name) for name in strike_names + dipdir_names)
+        has_dip = any(self._field_exists_on_layer(layer, name) for name in dip_names)
+        return has_orientation and has_dip
+
+    def _kinematics_context_available(self):
+        has_lineation = any(self._layer_has_lineation(layer) for layer in self._selected_layers
+                            if layer.type() == QgsMapLayer.VectorLayer)
+        return has_lineation and bool(self._kinematics_candidate_fields)
+
+    def _on_kinematics_toggled(self, checked):
+        if not checked:
+            return
+        if self._selected_kinematics_field in self._kinematics_candidate_fields:
+            return
+        if not self._kinematics_candidate_fields:
+            QMessageBox.warning(self, 'Kinematics',
+                                'No valid kinematics attribute field could be identified.')
+            self.kinematics_cb.blockSignals(True)
+            self.kinematics_cb.setChecked(False)
+            self.kinematics_cb.blockSignals(False)
+            return
+        field, ok = QInputDialog.getItem(
+            self, 'Kinematics Field',
+            'Select the attribute field containing kinematic sense values:',
+            self._kinematics_candidate_fields, 0, False)
+        if ok and field:
+            self._selected_kinematics_field = field
+        else:
+            self.kinematics_cb.blockSignals(True)
+            self.kinematics_cb.setChecked(False)
+            self.kinematics_cb.blockSignals(False)
+
+    def _field_has_recognised_kinematic_values(self, field_name):
+        for layer in self._selected_layers:
+            if layer.type() != QgsMapLayer.VectorLayer:
+                continue
+            if not self._field_exists_on_layer(layer, field_name):
+                continue
+            for feature in layer.selectedFeatures():
+                value = _attr(feature[field_name])
+                if value is not None and self._normalise_kinematic_value(value):
+                    return True
+        return False
+
+    def _validate_kinematics_request(self):
+        if self._selected_kinematics_field not in self._kinematics_candidate_fields:
+            QMessageBox.critical(self, 'Kinematics Error',
+                                 'No valid kinematics attribute field could be identified.')
+            return False
+        if not any(self._field_exists_on_layer(layer, self._selected_kinematics_field)
+                   for layer in self._selected_layers
+                   if layer.type() == QgsMapLayer.VectorLayer):
+            QMessageBox.critical(self, 'Kinematics Error',
+                                 'No valid kinematics attribute field could be identified.')
+            return False
+        if not self._field_has_recognised_kinematic_values(self._selected_kinematics_field):
+            QMessageBox.critical(
+                self, 'Kinematics Error',
+                'The selected kinematics field does not contain recognised kinematic values '
+                '(Sinistral, Dextral, Normal, Reverse, etc.).')
+            return False
+        if not any(self._layer_has_bearing_plane(layer) for layer in self._selected_layers
+                   if layer.type() == QgsMapLayer.VectorLayer):
+            QMessageBox.critical(
+                self, 'Kinematics Error',
+                'Kinematic arrows require both lineation data and an associated bearing plane '
+                '(strike/dip or dip direction/dip).')
+            return False
+        return True
+
     def _load(self):
         """Load config from JSON file if present, else QSettings, else defaults."""
         if self._config_path and os.path.exists(self._config_path):
@@ -249,6 +378,9 @@ class StereonetSettingsDialog(QDialog):
         else:
             self.linPlanes_cb.setChecked(False)
 
+        if self.kinematics_cb.isChecked() and not self._validate_kinematics_request():
+            return
+
         cfg = {
             'showGtCircles':  self.gtCircles_cb.isChecked(),
             'showContours':   self.contours_cb.isChecked(),
@@ -257,6 +389,7 @@ class StereonetSettingsDialog(QDialog):
             'roseDiagram':    self.rose_cb.isChecked(),
             'fitGirdle':      self.fitGirdle_cb.isChecked(),
             'dataType':       self.dataType_cb.currentText(),
+            'kinematicsField': self._selected_kinematics_field,
         }
         if self._config_path:
             os.makedirs(os.path.dirname(self._config_path), exist_ok=True)
@@ -330,7 +463,7 @@ class Stereonet:
             'dipdir_ref': ['DipDir_ref', 'Dip_Dir_ref', 'DipDirection_ref',
                            'Dip_Direction_ref', 'DipDirection_Ref',
                            'dipdir_ref', 'dip_dir_ref', 'dip_direction_ref'],
-            'kinematics': ['Kinematics', 'kinematics'],
+            'kinematics': ['Kinematics', 'kinematics', 'Kinematic', 'kinematic', 'Kin', 'kin', 'Movement', 'movement', 'SlipSense', 'Slip_Sense', 'slip_sense', 'ShearSense', 'Shear_Sense', 'shear_sense', 'SenseOfMovement', 'Sense_of_Movement', 'sense_of_movement'],
             'pitch_rhr': ['Pitch_RHR', 'Pitch_rhr', 'Pitch_Rhr', 'Pitch',
                           'pitch_rhr', 'RHR_pitch', 'rhr_pitch', 'pitch'],
         }
@@ -341,6 +474,162 @@ class Stereonet:
             if field_index != -1:
                 return True, fieldname
         return False, False
+
+    @staticmethod
+    def _normalise_token(value):
+        return re.sub(r'[^a-z0-9]+', '', str(value or '').lower())
+
+    def _candidate_kinematics_fields(self, layers):
+        """Return likely kinematics fields in selected vector layers."""
+        names = self._structural_field_names()['kinematics']
+        accepted = {self._normalise_token(name) for name in names}
+        candidates = []
+        for layer in layers:
+            if layer.type() != QgsMapLayer.VectorLayer:
+                continue
+            for field in layer.fields():
+                field_name = field.name()
+                norm = self._normalise_token(field_name)
+                if (norm in accepted or
+                        'kinematic' in norm or
+                        'movement' in norm or
+                        'slipsense' in norm or
+                        'shearsense' in norm or
+                        'senseofmovement' in norm):
+                    if field_name not in candidates:
+                        candidates.append(field_name)
+        return candidates
+
+    @classmethod
+    def _normalise_kinematic_value(cls, value):
+        lookup = {
+            'strikeslip': 'strike-slip',
+            'sinistral': 'sinistral',
+            'sinistralslip': 'sinistral',
+            'leftlateral': 'sinistral',
+            'sin': 'sinistral',
+            'dextral': 'dextral',
+            'dextralslip': 'dextral',
+            'rightlateral': 'dextral',
+            'dex': 'dextral',
+            'dipslip': 'dip-slip',
+            'normal': 'normal',
+            'normalslip': 'normal',
+            'extensional': 'normal',
+            'reverse': 'reverse',
+            'reverseslip': 'reverse',
+            'thrust': 'reverse',
+            'compressional': 'reverse',
+        }
+        return lookup.get(cls._normalise_token(value))
+
+    @staticmethod
+    def _as_scalar(value):
+        value = np.asarray(value).ravel()
+        if len(value) == 0:
+            return np.nan
+        return float(value[0])
+
+    def _append_kinematic_arrow_record(self, records, strike, dip, plunge,
+                                       bearing, sense_value):
+        sense = self._normalise_kinematic_value(sense_value)
+        if sense not in ('sinistral', 'dextral', 'normal', 'reverse'):
+            return
+        if None in (strike, dip, plunge, bearing):
+            return
+        records.append({
+            'strike': float(strike),
+            'dip': float(dip),
+            'plunge': float(plunge),
+            'bearing': float(bearing),
+            'sense': sense,
+        })
+
+    def _plot_kinematic_arrows(self, ax, records):
+        """Draw kinematic arrows from plane poles.
+
+        The arrow tail is always the pole to the bearing plane. The arrow
+        direction follows the local tangent to the great circle passing through
+        the pole and the associated lineation.
+
+        Arrow length is set once in stereonet/data coordinates. At the initial
+        figure size it is calibrated to appear approximately 0.75 cm long; when
+        the figure window is resized, the arrow scales naturally with the
+        stereonet instead of being recomputed to maintain a constant physical
+        on-screen length.
+        """
+        initial_arrow_length_cm = 0.75
+
+        def _great_circle_point(start, end, fraction):
+            xyz0 = np.asarray(stereonet_math.sph2cart(start[0], start[1]), dtype=float)
+            xyz1 = np.asarray(stereonet_math.sph2cart(end[0], end[1]), dtype=float)
+            dot = float(np.clip(np.dot(xyz0, xyz1), -1.0, 1.0))
+            omega = np.arccos(dot)
+            if np.isclose(omega, 0.0):
+                return None
+            sin_omega = np.sin(omega)
+            xyz = ((np.sin((1.0 - fraction) * omega) / sin_omega) * xyz0 +
+                   (np.sin(fraction * omega) / sin_omega) * xyz1)
+            lon, lat = stereonet_math.cart2sph(*xyz)
+            return np.array([float(lon), float(lat)])
+
+        # Ensure transforms are initialised before converting the requested
+        # initial display length to a stereonet/data-coordinate offset.
+        ax.figure.canvas.draw_idle()
+
+        for rec in records:
+            pole_lon, pole_lat = mplstereonet.pole(rec['strike'], rec['dip'])
+            line_lon, line_lat = mplstereonet.line(rec['plunge'], rec['bearing'])
+
+            pole = np.array([self._as_scalar(pole_lon), self._as_scalar(pole_lat)])
+            line = np.array([self._as_scalar(line_lon), self._as_scalar(line_lat)])
+            if np.any(np.isnan(pole)) or np.any(np.isnan(line)):
+                continue
+            if np.allclose(pole, line):
+                continue
+
+            tangent_point = _great_circle_point(pole, line, 0.03)
+            if tangent_point is None or np.any(np.isnan(tangent_point)):
+                continue
+
+            pole_disp = ax.transData.transform(pole)
+            tangent_disp = ax.transData.transform(tangent_point)
+            direction = tangent_disp - pole_disp
+            norm = np.hypot(direction[0], direction[1])
+            if np.isclose(norm, 0.0):
+                continue
+            direction = direction / norm
+
+            sense = rec['sense']
+            if sense == 'normal':
+                # Pole -> lineation.
+                pass
+            elif sense == 'reverse':
+                # Tail remains at the pole, but the arrow points away from the
+                # lineation along the same local great-circle tangent.
+                direction = -direction
+            elif sense == 'sinistral':
+                # Right-directed strike-slip arrow, still starting at the pole.
+                if direction[0] < 0:
+                    direction = -direction
+            elif sense == 'dextral':
+                # Left-directed strike-slip arrow, still starting at the pole.
+                if direction[0] > 0:
+                    direction = -direction
+            else:
+                continue
+
+            initial_length_px = (initial_arrow_length_cm / 2.54) * ax.figure.dpi
+            end_disp = pole_disp + direction * initial_length_px
+            end_data = ax.transData.inverted().transform(end_disp)
+
+            arrow = FancyArrowPatch(
+                posA=tuple(pole), posB=tuple(end_data),
+                arrowstyle='-|>', mutation_scale=10,
+                linewidth=1.0, color='black',
+                shrinkA=0, shrinkB=0,
+                transform=ax.transData, zorder=6)
+            ax.add_patch(arrow)
 
     def _detect_data_type_from_layers(self, layers):
         """Infer the plotting mode from fields available in selected layers."""
@@ -389,11 +678,14 @@ class Stereonet:
 
         layers = self.iface.layerTreeView().selectedLayers()
         detected_data_type = self._detect_data_type_from_layers(layers)
+        kinematics_candidate_fields = self._candidate_kinematics_fields(layers)
 
         dlg = StereonetSettingsDialog(
             self.iface.mainWindow(),
             config_path=config_path,
-            detected_data_type=detected_data_type)
+            detected_data_type=detected_data_type,
+            selected_layers=layers,
+            kinematics_candidate_fields=kinematics_candidate_fields)
         dlg.exec()
     
     def waxi_tangent_lineation_plot(self,ax,strikes, dips,kinematics,rhr,azs):
@@ -528,6 +820,7 @@ class Stereonet:
         roseAzimuth = list()
         rhr = list()
         azs = list()
+        kinematic_arrow_records = list()
 
 
         project = QgsProject.instance()
@@ -539,8 +832,9 @@ class Stereonet:
         #stereoConfigPath = head_tail[0]+"/0. FIELD DATA/0. CURRENT MISSION/0. STOPS-SAMPLING-PHOTOGRAPHS-COMMENTS/stereonet.json"
         
         stereoConfig = {'showGtCircles': False, 'showContours': True,
-                        'showKinematics': True, 'linPlanes': True, 'roseDiagram': False,
-                        'fitGirdle': False, 'dataType': 'Planes Only'}
+                        'showKinematics': False, 'linPlanes': True, 'roseDiagram': False,
+                        'fitGirdle': False, 'dataType': 'Planes Only',
+                        'kinematicsField': None}
 
         if os.path.exists(stereoConfigPath):
             with open(stereoConfigPath, "r") as json_file:
@@ -554,6 +848,9 @@ class Stereonet:
 
         layers = list(QgsProject.instance().mapLayers().values())
         layers=self.iface.layerTreeView().selectedLayers()
+        selected_kinematics_field = stereoConfig.get('kinematicsField')
+        plot_kinematics = bool(stereoConfig.get('showKinematics', False)
+                               and selected_kinematics_field)
 
         for layer in layers:
             if layer.type() == QgsMapLayer.VectorLayer:
@@ -567,26 +864,41 @@ class Stereonet:
                 srefExists, srefname = self._field_exists(layer,srefnames)
                 drefExists, drefname = self._field_exists(layer,drefnames)
                 ddrefExists, ddrefname = self._field_exists(layer,ddrefnames)
-                kinematicsExists, kname = self._field_exists(layer,knames)
+                if (plot_kinematics and selected_kinematics_field and
+                        layer.fields().lookupField(selected_kinematics_field) != -1):
+                    kinematicsExists, kname = True, selected_kinematics_field
+                else:
+                    kinematicsExists, kname = self._field_exists(layer,knames)
                 prhrExists, prhrname = self._field_exists(layer,prhrnames )
 
 
 
 
                 for feature in iter:
+                    current_plane_strike = None
+                    current_plane_dip = None
+                    current_ref_strike = None
+                    current_ref_dip = None
+                    current_line_plunge = None
+                    current_line_bearing = None
+
                     # Capture plane data (dip direction/dip or strike/dip)
                     if ddrExists and dipExists:
                         val_dd, val_d = _attr(feature[ddname]), _attr(feature[dname])
                         if val_dd is not None and val_d is not None:
-                            plane_strikes.append((int(val_dd) - 90) % 360)
-                            plane_dips.append(float(val_d))
+                            current_plane_strike = (float(val_dd) - 90.0) % 360.0
+                            current_plane_dip = float(val_d)
+                            plane_strikes.append(current_plane_strike)
+                            plane_dips.append(current_plane_dip)
                             plane_feature_ids.append((layer, feature.id()))
                             plane_labels.append(f"{int(val_d)}/{int(val_dd):03d}")
                     elif strikeExists and dipExists:
                         val_s, val_d = _attr(feature[sname]), _attr(feature[dname])
                         if val_s is not None and val_d is not None:
-                            plane_strikes.append(float(val_s))
-                            plane_dips.append(float(val_d))
+                            current_plane_strike = float(val_s)
+                            current_plane_dip = float(val_d)
+                            plane_strikes.append(current_plane_strike)
+                            plane_dips.append(current_plane_dip)
                             plane_feature_ids.append((layer, feature.id()))
                             plane_labels.append(f"{int(val_d)}/{int(val_s):03d}")
 
@@ -594,8 +906,10 @@ class Stereonet:
                     if azimuthExists and plungeExists:
                         val_a, val_p = _attr(feature[aname]), _attr(feature[pname])
                         if val_a is not None and val_p is not None:
-                            linear_plunges.append(int(val_p))
-                            linear_bearings.append(int(val_a))
+                            current_line_plunge = float(val_p)
+                            current_line_bearing = float(val_a)
+                            linear_plunges.append(current_line_plunge)
+                            linear_bearings.append(current_line_bearing)
                             linear_feature_ids.append((layer, feature.id()))
                             linear_labels.append(f"{int(val_p)}/{int(val_a):03d}")
 
@@ -604,13 +918,17 @@ class Stereonet:
                         if vd is not None and srefExists:
                             vs = _attr(feature[srefname])
                             if vs is not None:
-                                strikesref.append(float(vs))
-                                dipsref.append(float(vd))
+                                current_ref_strike = float(vs)
+                                current_ref_dip = float(vd)
+                                strikesref.append(current_ref_strike)
+                                dipsref.append(current_ref_dip)
                         elif vd is not None and ddrefExists:
                             vdd = _attr(feature[ddrefname])
                             if vdd is not None:
-                                strikesref.append((float(vdd) - 90) % 360)
-                                dipsref.append(float(vd))
+                                current_ref_strike = (float(vdd) - 90.0) % 360.0
+                                current_ref_dip = float(vd)
+                                strikesref.append(current_ref_strike)
+                                dipsref.append(current_ref_dip)
 
                     if (plungeExists and drefExists and
                             kinematicsExists and azimuthExists):
@@ -630,6 +948,19 @@ class Stereonet:
                                 kinematics.append(vk)
                                 rhr.append(_attr(feature[prhrname]) if prhrExists else None)
                                 azs.append(_attr(feature[aname]))
+
+                    if plot_kinematics and kinematicsExists and azimuthExists and plungeExists:
+                        vk = _attr(feature[kname])
+                        arrow_strike = current_ref_strike
+                        arrow_dip = current_ref_dip
+                        if arrow_strike is None or arrow_dip is None:
+                            arrow_strike = current_plane_strike
+                            arrow_dip = current_plane_dip
+                        self._append_kinematic_arrow_record(
+                            kinematic_arrow_records,
+                            arrow_strike, arrow_dip,
+                            current_line_plunge, current_line_bearing,
+                            vk)
 
                     if azimuthExists and stereoConfig.get('roseDiagram', False):
                         va = _attr(feature[aname])
@@ -747,9 +1078,9 @@ class Stereonet:
                 elif has_planes:
                     ax.plane(plane_strikes, plane_dips, 'k', linewidth=1)
 
-                if stereoConfig.get('showKinematics', True) and rakes_strikes:
-                    self.waxi_tangent_lineation_plot(ax, rakes_strikes, rakes_dips,
-                                                     kinematics, rhr, azs)
+                if (plot_kinematics and kinematic_arrow_records and
+                        effective_data_type == 'Lineations with Bearing Planes'):
+                    self._plot_kinematic_arrows(ax, kinematic_arrow_records)
 
             # Resolve which plotted points to use for interactive selection
             pts = None
